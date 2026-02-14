@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Search, Filter, SlidersHorizontal } from 'lucide-react';
 import { ComplaintQueueTable } from '../../../components/dashboard/ComplaintQueueTable';
-import { COMPLAINT_CATEGORIES, INDUSTRY_CLASSIFICATIONS, RISK_LEVEL_CONFIG } from '../../../../shared/constants/categories';
+import { COMPLAINT_CATEGORIES, INDUSTRY_CLASSIFICATIONS, RISK_LEVEL_CONFIG } from '../../../src/shared/constants/categories';
 
 const DEMO_ALL_COMPLAINTS = [
   {
