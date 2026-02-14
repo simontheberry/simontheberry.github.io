@@ -6,11 +6,11 @@
 import { createLogger } from '../../utils/logger';
 import { getAiService, type AiOutputRecord } from '../ai/ai-service';
 import type {
+  ComplaintCategory,
   RiskLevel,
   RoutingDestination,
   TriageResult,
   PriorityWeights,
-  DEFAULT_PRIORITY_WEIGHTS,
 } from '../../../shared/types/complaint';
 
 const logger = createLogger('triage-engine');
@@ -97,7 +97,7 @@ export class TriageEngine {
 
     const triageResult: TriageResult = {
       complaintId: input.complaintId,
-      category: (classificationData.primaryCategory as string) || 'other',
+      category: ((classificationData.primaryCategory as string) || 'other') as ComplaintCategory,
       legalCategory: classificationData.legalCategory as string || 'unknown',
       riskLevel: risk.riskLevel as RiskLevel,
       complexityScore: risk.complexityScore as number,

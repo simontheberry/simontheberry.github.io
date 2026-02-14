@@ -179,7 +179,7 @@ export class SystemicDetectionEngine {
     tenantId: string,
   ): Promise<{
     similarComplaints: SimilarComplaint[];
-    clusterResult: Awaited<ReturnType<typeof this.analyzeCluster>> | null;
+    clusterResult: { isSystemic: boolean; title: string; description: string; riskLevel: string; commonPatterns: string[]; confidence: number } | null;
     spikes: SpikeAnomaly[];
   }> {
     // Step 1: Store embedding

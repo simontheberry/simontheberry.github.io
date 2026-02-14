@@ -29,7 +29,7 @@ authRoutes.post('/login', async (req: Request, res: Response) => {
       email: body.email,
     },
     config.JWT_SECRET,
-    { expiresIn: config.JWT_EXPIRES_IN },
+    { expiresIn: config.JWT_EXPIRES_IN as string & {} },
   );
 
   res.json({
@@ -60,7 +60,7 @@ authRoutes.post('/refresh', async (req: Request, res: Response) => {
     const newToken = jwt.sign(
       { userId: payload.userId, tenantId: payload.tenantId, role: payload.role, email: payload.email },
       config.JWT_SECRET,
-      { expiresIn: config.JWT_EXPIRES_IN },
+      { expiresIn: config.JWT_EXPIRES_IN as string & {} },
     );
     res.json({ success: true, data: { token: newToken } });
   } catch {
