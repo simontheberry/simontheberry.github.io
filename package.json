@@ -15,7 +15,7 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx src/server/db/seeds/index.ts",
     "db:studio": "prisma studio",
-    "lint": "eslint src/ --ext .ts,.tsx",
+    "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
