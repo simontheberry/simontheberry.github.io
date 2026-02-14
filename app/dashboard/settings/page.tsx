@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Save, SlidersHorizontal, Shield, Bell, Cpu } from 'lucide-react';
-import type { PriorityWeights } from '../../../../shared/types/complaint';
+import type { PriorityWeights } from '../../../src/shared/types/complaint';
 
 const DEFAULT_WEIGHTS: PriorityWeights = {
   riskScore: 0.30,

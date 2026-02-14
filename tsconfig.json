@@ -15,15 +15,17 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/client/*"],
+      "@/*": ["./*"],
       "@server/*": ["./src/server/*"],
       "@shared/*": ["./src/shared/*"]
     }
   },
   "include": [
     "next-env.d.ts",
-    "src/client/**/*.ts",
-    "src/client/**/*.tsx",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
     "src/shared/**/*.ts",
     ".next/types/**/*.ts"
   ],

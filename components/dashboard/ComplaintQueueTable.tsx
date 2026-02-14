@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowUpRight, Clock } from 'lucide-react';
-import { COMPLAINT_CATEGORIES, RISK_LEVEL_CONFIG, STATUS_LABELS } from '../../../shared/constants/categories';
+import { COMPLAINT_CATEGORIES, RISK_LEVEL_CONFIG, STATUS_LABELS } from '../../src/shared/constants/categories';
 
 interface QueueComplaint {
   id: string;
