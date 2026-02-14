@@ -1,0 +1,439 @@
+// ============================================================================
+// Database Schema – AI Complaint Triage Platform
+// PostgreSQL with pgvector for embeddings
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public"), uuid_ossp(map: "uuid-ossp")]
+}
+
+// ============================================================================
+// Multi-Tenant Core
+// ============================================================================
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  domain    String?
+  settings  Json     @default("{}")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users              User[]
+  complaints         Complaint[]
+  businesses         Business[]
+  teams              Team[]
+  systemicClusters   SystemicCluster[]
+  auditLogs          AuditLog[]
+  communicationTemplates CommunicationTemplate[]
+
+  @@map("tenants")
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id])
+  members User[]
+  complaints Complaint[] @relation("TeamComplaints")
+
+  @@map("teams")
+}
+
+// ============================================================================
+// Users & Auth
+// ============================================================================
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  email        String
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         String   @default("complaint_officer")
+  teamId       String?  @map("team_id")
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant             Tenant       @relation(fields: [tenantId], references: [id])
+  team               Team?        @relation(fields: [teamId], references: [id])
+  assignedComplaints Complaint[]  @relation("AssignedOfficer")
+  auditLogs          AuditLog[]
+  communications     Communication[]
+  tasks              Task[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+// ============================================================================
+// Complaints
+// ============================================================================
+
+model Complaint {
+  id              String   @id @default(uuid())
+  tenantId        String   @map("tenant_id")
+  referenceNumber String   @unique @map("reference_number")
+  status          String   @default("submitted")
+  channel         String   @default("portal")
+
+  // Core content
+  rawText    String @map("raw_text")
+  summary    String?
+
+  // Complainant
+  complainantFirstName String  @map("complainant_first_name")
+  complainantLastName  String  @map("complainant_last_name")
+  complainantEmail     String  @map("complainant_email")
+  complainantPhone     String? @map("complainant_phone")
+  complainantAddress   Json?   @map("complainant_address")
+  isVulnerable         Boolean @default(false) @map("is_vulnerable")
+  vulnerabilityIndicators Json? @map("vulnerability_indicators")
+
+  // Business reference
+  businessId String?  @map("business_id")
+
+  // Classification
+  category        String?
+  legalCategory   String? @map("legal_category")
+  industry        String?
+  productService  String? @map("product_service")
+
+  // Financial
+  monetaryValue    Decimal? @map("monetary_value")
+  monetaryCurrency String?  @default("AUD") @map("monetary_currency")
+
+  // Dates
+  incidentDate DateTime? @map("incident_date")
+  submittedAt  DateTime? @map("submitted_at")
+  resolvedAt   DateTime? @map("resolved_at")
+  slaDeadline  DateTime? @map("sla_deadline")
+
+  // Routing & Assignment
+  routingDestination String? @map("routing_destination")
+  assignedToId       String? @map("assigned_to_id")
+  teamId             String? @map("team_id")
+
+  // Priority & Risk
+  priorityScore        Float?  @map("priority_score")
+  riskLevel            String? @map("risk_level")
+  complexityScore      Float?  @map("complexity_score")
+  breachLikelihood     Float?  @map("breach_likelihood")
+  publicHarmIndicator  Float?  @map("public_harm_indicator")
+  isCivilDispute       Boolean? @map("is_civil_dispute")
+  isSystemicRisk       Boolean? @default(false) @map("is_systemic_risk")
+
+  // Systemic
+  systemicClusterId String? @map("systemic_cluster_id")
+
+  // Embedding for similarity search (1536 dimensions for OpenAI ada-002)
+  // Stored as JSON since Prisma doesn't natively support pgvector
+  // Raw SQL used for vector operations
+  embeddingId String? @unique @map("embedding_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  business        Business?        @relation(fields: [businessId], references: [id])
+  assignedTo      User?            @relation("AssignedOfficer", fields: [assignedToId], references: [id])
+  team            Team?            @relation("TeamComplaints", fields: [teamId], references: [id])
+  systemicCluster SystemicCluster? @relation(fields: [systemicClusterId], references: [id])
+  evidence        Evidence[]
+  aiOutputs       AiOutput[]
+  communications  Communication[]
+  tasks           Task[]
+  escalations     Escalation[]
+  timeline        ComplaintEvent[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, priorityScore(sort: Desc)])
+  @@index([tenantId, riskLevel])
+  @@index([tenantId, category])
+  @@index([tenantId, assignedToId])
+  @@index([tenantId, routingDestination])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([businessId])
+  @@map("complaints")
+}
+
+// ============================================================================
+// Complaint Embeddings (pgvector)
+// ============================================================================
+
+model ComplaintEmbedding {
+  id          String @id @default(uuid())
+  complaintId String @unique @map("complaint_id")
+  // vector(1536) column created via raw SQL migration
+  // embedding Unsupported("vector(1536)")
+  model       String @default("text-embedding-ada-002")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("complaint_embeddings")
+}
+
+// ============================================================================
+// Businesses
+// ============================================================================
+
+model Business {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  abn          String?
+  entityName   String?  @map("entity_name")
+  entityType   String?  @map("entity_type")
+  entityStatus String?  @map("entity_status")
+  website      String?
+  industry     String?
+  address      String?
+  phone        String?
+  email        String?
+  isVerified   Boolean  @default(false) @map("is_verified")
+
+  // Aggregated stats
+  complaintCount    Int @default(0) @map("complaint_count")
+  avgRiskScore      Float? @map("avg_risk_score")
+  repeatOffenderFlag Boolean @default(false) @map("repeat_offender_flag")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  complaints Complaint[]
+
+  @@unique([tenantId, abn])
+  @@index([tenantId, name])
+  @@index([tenantId, repeatOffenderFlag])
+  @@map("businesses")
+}
+
+// ============================================================================
+// Evidence
+// ============================================================================
+
+model Evidence {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  filename    String
+  mimeType    String   @map("mime_type")
+  size        Int
+  storageKey  String   @map("storage_key")
+  description String?
+  uploadedAt  DateTime @default(now()) @map("uploaded_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@map("evidence")
+}
+
+// ============================================================================
+// AI Outputs (full audit trail)
+// ============================================================================
+
+model AiOutput {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  outputType  String   @map("output_type") // classification, summary, risk_score, draft_response, extraction, clustering
+  model       String
+  prompt      String
+  rawOutput   String   @map("raw_output")
+  parsedOutput Json?   @map("parsed_output")
+  confidence  Float?
+  reasoning   String?
+  isEdited    Boolean  @default(false) @map("is_edited")
+  editedBy    String?  @map("edited_by")
+  editedAt    DateTime? @map("edited_at")
+  tokenUsage  Json?    @map("token_usage")
+  latencyMs   Int?     @map("latency_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@index([complaintId, outputType])
+  @@map("ai_outputs")
+}
+
+// ============================================================================
+// Systemic Clusters
+// ============================================================================
+
+model SystemicCluster {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  title       String
+  description String?
+  industry    String?
+  category    String?
+  riskLevel   String   @default("medium") @map("risk_level")
+
+  // Detection metadata
+  complaintCount  Int     @default(0) @map("complaint_count")
+  avgSimilarity   Float?  @map("avg_similarity")
+  detectionMethod String? @map("detection_method")
+  isActive        Boolean @default(true) @map("is_active")
+  isAcknowledged  Boolean @default(false) @map("is_acknowledged")
+  acknowledgedBy  String? @map("acknowledged_by")
+  acknowledgedAt  DateTime? @map("acknowledged_at")
+
+  // Patterns
+  commonPatterns Json? @map("common_patterns")
+
+  detectedAt DateTime @default(now()) @map("detected_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  complaints Complaint[]
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, riskLevel])
+  @@map("systemic_clusters")
+}
+
+// ============================================================================
+// Communications
+// ============================================================================
+
+model Communication {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  type        String   // email_to_complainant, email_to_business, internal_note, regulatory_notice
+  direction   String   // inbound, outbound
+  subject     String?
+  body        String
+  recipients  Json?
+  isAiDrafted Boolean  @default(false) @map("is_ai_drafted")
+  isApproved  Boolean  @default(false) @map("is_approved")
+  approvedBy  String?  @map("approved_by")
+  sentAt      DateTime? @map("sent_at")
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  creator   User?     @relation(fields: [createdBy], references: [id])
+
+  @@index([complaintId])
+  @@map("communications")
+}
+
+model CommunicationTemplate {
+  id       String @id @default(uuid())
+  tenantId String @map("tenant_id")
+  name     String
+  type     String // response_to_complainant, notice_to_business, escalation_notice
+  subject  String
+  body     String
+  variables Json? @default("[]")
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("communication_templates")
+}
+
+// ============================================================================
+// Tasks & Workflow
+// ============================================================================
+
+model Task {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  assignedTo  String?  @map("assigned_to")
+  title       String
+  description String?
+  type        String   // review, investigate, respond, escalate, follow_up
+  status      String   @default("pending") // pending, in_progress, completed, cancelled
+  priority    Int      @default(0)
+  dueDate     DateTime? @map("due_date")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  assignee  User?     @relation(fields: [assignedTo], references: [id])
+
+  @@index([assignedTo, status])
+  @@index([complaintId])
+  @@map("tasks")
+}
+
+// ============================================================================
+// Escalations
+// ============================================================================
+
+model Escalation {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  fromStatus  String   @map("from_status")
+  toStatus    String   @map("to_status")
+  reason      String
+  escalatedBy String?  @map("escalated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@map("escalations")
+}
+
+// ============================================================================
+// Complaint Events (Timeline)
+// ============================================================================
+
+model ComplaintEvent {
+  id          String   @id @default(uuid())
+  complaintId String   @map("complaint_id")
+  eventType   String   @map("event_type") // status_change, assignment, communication, ai_output, escalation, note
+  description String
+  metadata    Json?
+  createdBy   String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@index([complaintId, createdAt(sort: Desc)])
+  @@map("complaint_events")
+}
+
+// ============================================================================
+// Audit Logs
+// ============================================================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  oldValues Json?    @map("old_values")
+  newValues Json?    @map("new_values")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
