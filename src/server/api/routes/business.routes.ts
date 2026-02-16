@@ -8,6 +8,7 @@ import { authenticate } from '../middleware/auth';
 import { requireTenant } from '../middleware/tenant-resolver';
 import { prisma } from '../../db/client';
 import { AppError } from '../middleware/error-handler';
+import { normalizeQuery } from '../../utils/query-parser';
 import { AbnLookupService } from '../../services/enrichment/abn-lookup';
 
 export const businessRoutes = Router();
@@ -25,7 +26,7 @@ const abnSearchSchema = z.object({
 
 // GET /api/v1/businesses/search -- Search ABR for business details
 businessRoutes.get('/search', async (req: Request, res: Response) => {
-  const query = abnSearchSchema.parse(req.query);
+  const query = abnSearchSchema.parse(normalizeQuery(req.query));
   const abnService = new AbnLookupService();
 
   try {

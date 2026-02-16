@@ -11,6 +11,7 @@ import { prisma } from '../../db/client';
 import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
+import { normalizeQuery } from '../../utils/query-parser';
 
 const logger = createLogger('complaint-routes');
 
@@ -74,7 +75,7 @@ const SORT_FIELD_MAP: Record<string, string> = {
 
 // GET /api/v1/complaints -- List complaints with filtering & pagination
 complaintRoutes.get('/', async (req: Request, res: Response) => {
-  const filters = complaintFiltersSchema.parse(req.query);
+  const filters = complaintFiltersSchema.parse(normalizeQuery(req.query));
   const tenantId = req.tenantId!;
 
   // Build where clause with tenant isolation

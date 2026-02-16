@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { prisma } from './client';
+import { Prisma } from '@prisma/client';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('audit');
@@ -28,8 +29,8 @@ export async function writeAuditLog(entry: AuditLogEntry): Promise<void> {
         action: entry.action,
         entity: entry.entity,
         entityId: entry.entityId,
-        oldValues: entry.oldValues ?? undefined,
-        newValues: entry.newValues ?? undefined,
+        oldValues: entry.oldValues ? (entry.oldValues as Prisma.InputJsonValue) : undefined,
+        newValues: entry.newValues ? (entry.newValues as Prisma.InputJsonValue) : undefined,
         ipAddress: entry.ipAddress,
         userAgent: entry.userAgent,
       },
