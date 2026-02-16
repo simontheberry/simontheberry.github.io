@@ -11,6 +11,9 @@ import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { rateLimit } from '../middleware/rate-limiter';
 import { createLogger } from '../../utils/logger';
+import { getTriageQueue, QUEUES } from '../../services/queue/worker';
+import type { TriageJobData } from '../../services/queue/worker';
+import { getAiService } from '../../services/ai/ai-service';
 
 const logger = createLogger('intake-routes');
 
@@ -18,8 +21,8 @@ export const intakeRoutes = Router();
 
 // Rate limiting for public endpoints
 const submitRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, maxRequests: 10, message: 'Too many complaint submissions. Please try again later.' });
-const guidanceRateLimit = rateLimit({ windowMs: 60 * 1000, maxRequests: 30, message: 'Too many AI guidance requests. Please try again later.' });
-const webhookRateLimit = rateLimit({ windowMs: 60 * 1000, maxRequests: 100, message: 'Webhook rate limit exceeded.' });
+const guidanceRateLimit = rateLimit({ windowMs: 60 * 1000, maxRequests: 5, message: 'Too many AI guidance requests. Please try again later.' });
+const webhookRateLimit = rateLimit({ windowMs: 60 * 1000, maxRequests: 10, message: 'Webhook rate limit exceeded.' });
 
 // ---- Validation Schemas ----
 
@@ -167,13 +170,22 @@ intakeRoutes.post('/submit', submitRateLimit, async (req: Request, res: Response
     tenantId,
   });
 
-  // TODO: Queue triage job via BullMQ when Redis is available
-  // await triageQueue.add(QUEUES.COMPLAINT_TRIAGE, {
-  //   complaintId: complaint.id,
-  //   tenantId,
-  //   rawText: body.complaint.rawText,
-  //   businessId: business.id,
-  // });
+  // Queue triage job if Redis/BullMQ is available
+  const triageQueue = getTriageQueue();
+  if (triageQueue) {
+    await triageQueue.add(QUEUES.COMPLAINT_TRIAGE, {
+      complaintId: complaint.id,
+      tenantId,
+      rawText: body.complaint.rawText,
+      businessId: business.id,
+    } satisfies TriageJobData);
+    logger.info('Triage job queued', { complaintId: complaint.id, tenantId });
+  } else {
+    logger.warn('Triage queue not available, complaint requires manual triage', {
+      complaintId: complaint.id,
+      tenantId,
+    });
+  }
 
   res.status(201).json({
     success: true,
@@ -198,26 +210,26 @@ intakeRoutes.post('/ai-guidance', guidanceRateLimit, async (req: Request, res: R
     throw new AppError(404, 'TENANT_NOT_FOUND', 'The specified regulator portal was not found');
   }
 
-  // TODO: Call AI service when API keys are configured
-  // const aiService = getAiService();
-  // const { result } = await aiService.detectMissingData(body.text, body.currentData ?? {});
+  const aiService = getAiService();
+  const { result, record } = await aiService.detectMissingData(body.text, body.currentData ?? {});
 
-  // Placeholder response until AI service is wired
+  const parsed = result as {
+    extractedData: Record<string, unknown>;
+    missingFields: Array<{ field: string; importance?: string; question: string }>;
+    followUpQuestions: string[];
+    completenessScore?: number;
+    confidence: number;
+  };
+
   res.json({
     success: true,
     data: {
-      extractedData: {
-        businessName: null,
-        category: null,
-        monetaryValue: null,
-        incidentDate: null,
-      },
-      missingFields: [
-        { field: 'businessName', question: 'What is the name of the business you are complaining about?' },
-        { field: 'incidentDate', question: 'When did this issue first occur?' },
-      ],
-      followUpQuestions: [],
-      confidence: 0,
+      extractedData: parsed.extractedData,
+      missingFields: parsed.missingFields,
+      followUpQuestions: parsed.followUpQuestions,
+      completenessScore: parsed.completenessScore ?? null,
+      confidence: parsed.confidence,
+      model: record.model,
     },
   });
 });
@@ -285,6 +297,22 @@ intakeRoutes.post('/webhook', webhookRateLimit, async (req: Request, res: Respon
     source: body.source,
     tenantId: tenant.id,
   });
+
+  // Queue triage job if Redis/BullMQ is available
+  const webhookTriageQueue = getTriageQueue();
+  if (webhookTriageQueue) {
+    await webhookTriageQueue.add(QUEUES.COMPLAINT_TRIAGE, {
+      complaintId: complaint.id,
+      tenantId: tenant.id,
+      rawText,
+    } satisfies TriageJobData);
+    logger.info('Triage job queued for webhook complaint', { complaintId: complaint.id });
+  } else {
+    logger.warn('Triage queue not available, webhook complaint requires manual triage', {
+      complaintId: complaint.id,
+      tenantId: tenant.id,
+    });
+  }
 
   res.status(202).json({
     success: true,

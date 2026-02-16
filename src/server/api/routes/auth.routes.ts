@@ -19,7 +19,7 @@ const logger = createLogger('auth-routes');
 export const authRoutes = Router();
 
 // Strict rate limit on login to prevent brute force attacks
-const loginRateLimit = rateLimit({ windowMs: 15 * 60 * 1000, maxRequests: 10, message: 'Too many login attempts. Please try again later.' });
+const loginRateLimit = rateLimit({ windowMs: 60 * 1000, maxRequests: 5, message: 'Too many login attempts. Please try again later.' });
 
 const loginSchema = z.object({
   email: z.string().email(),

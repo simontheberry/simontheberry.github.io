@@ -10,6 +10,8 @@ import { prisma } from '../../db/client';
 import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
+import { getTriageQueue, QUEUES } from '../../services/queue/worker';
+import type { TriageJobData } from '../../services/queue/worker';
 
 const logger = createLogger('triage-routes');
 
@@ -26,7 +28,7 @@ const overrideSchema = z.object({
 });
 
 // POST /api/v1/triage/:complaintId -- Trigger triage for a complaint
-triageRoutes.post('/:complaintId', async (req: Request, res: Response) => {
+triageRoutes.post('/:complaintId', authorize('supervisor', 'admin'), async (req: Request, res: Response) => {
   const { complaintId } = req.params as { complaintId: string };
   const tenantId = req.tenantId!;
 
@@ -55,12 +57,19 @@ triageRoutes.post('/:complaintId', async (req: Request, res: Response) => {
     },
   });
 
-  // TODO: Queue triage job via BullMQ when Redis is available
-  // await triageQueue.add(QUEUES.COMPLAINT_TRIAGE, {
-  //   complaintId, tenantId, rawText: complaint.rawText, businessId: complaint.businessId,
-  // });
-
-  logger.info('Triage queued', { complaintId, tenantId });
+  // Queue triage job if Redis/BullMQ is available
+  const triageQueue = getTriageQueue();
+  if (triageQueue) {
+    await triageQueue.add(QUEUES.COMPLAINT_TRIAGE, {
+      complaintId,
+      tenantId,
+      rawText: complaint.rawText,
+      businessId: complaint.businessId ?? undefined,
+    } satisfies TriageJobData);
+    logger.info('Triage job queued', { complaintId, tenantId });
+  } else {
+    throw new AppError(503, 'SERVICE_UNAVAILABLE', 'Triage queue is not available. Redis may not be running.');
+  }
 
   res.json({
     success: true,

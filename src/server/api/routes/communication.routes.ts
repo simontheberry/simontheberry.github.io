@@ -10,6 +10,7 @@ import { prisma } from '../../db/client';
 import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
+import { getAiService } from '../../services/ai/ai-service';
 
 const logger = createLogger('communication-routes');
 
@@ -43,9 +44,62 @@ communicationRoutes.post('/draft', async (req: Request, res: Response) => {
     throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
   }
 
-  // TODO: Call AI service to generate draft based on complaint context
-  // const aiService = getAiService();
-  // const { result, record } = await aiService.draftComplainantResponse(...)
+  const aiService = getAiService();
+  let subject: string;
+  let draftBody: string;
+  let confidence = 0;
+  let aiOutputRecord = null;
+
+  if (body.type === 'response_to_complainant') {
+    const { result, record } = await aiService.draftComplainantResponse(
+      complaint.summary || complaint.rawText.slice(0, 500),
+      complaint.category || 'general',
+      complaint.riskLevel || 'medium',
+    );
+    const parsed = result as { subject: string; body: string; confidence: number };
+    subject = parsed.subject;
+    draftBody = parsed.body;
+    confidence = parsed.confidence ?? 0;
+    aiOutputRecord = record;
+  } else if (body.type === 'notice_to_business') {
+    if (!complaint.business?.name) {
+      throw new AppError(400, 'MISSING_BUSINESS', 'Complaint has no associated business for a business notice');
+    }
+    const { result, record } = await aiService.draftBusinessNotice(
+      complaint.summary || complaint.rawText.slice(0, 500),
+      complaint.business.name,
+      complaint.category || 'general',
+      complaint.category || 'consumer complaint',
+    );
+    const parsed = result as { subject: string; body: string; confidence: number };
+    subject = parsed.subject;
+    draftBody = parsed.body;
+    confidence = parsed.confidence ?? 0;
+    aiOutputRecord = record;
+  } else {
+    // Escalation notice -- no AI template yet, use a standard subject
+    subject = `Escalation: Complaint ${complaint.referenceNumber}`;
+    draftBody = `This complaint has been escalated for further review.\n\nReference: ${complaint.referenceNumber}\nCategory: ${complaint.category || 'Unclassified'}\nRisk Level: ${complaint.riskLevel || 'Pending assessment'}`;
+    confidence = 1.0;
+  }
+
+  // Store AI output for audit trail if AI was used
+  if (aiOutputRecord) {
+    await prisma.aiOutput.create({
+      data: {
+        complaintId: body.complaintId,
+        outputType: aiOutputRecord.outputType,
+        model: aiOutputRecord.model,
+        prompt: aiOutputRecord.prompt,
+        rawOutput: aiOutputRecord.rawOutput,
+        parsedOutput: aiOutputRecord.parsedOutput as Record<string, unknown>,
+        confidence: aiOutputRecord.confidence,
+        reasoning: aiOutputRecord.reasoning,
+        tokenUsage: aiOutputRecord.tokenUsage,
+        latencyMs: aiOutputRecord.latencyMs,
+      },
+    });
+  }
 
   // Create communication record as draft
   const communication = await prisma.communication.create({
@@ -55,9 +109,9 @@ communicationRoutes.post('/draft', async (req: Request, res: Response) => {
         : body.type === 'notice_to_business' ? 'email_to_business'
         : 'internal_note',
       direction: 'outbound',
-      subject: `Regarding your complaint reference ${complaint.referenceNumber}`,
-      body: 'This is an AI-generated draft. Replace with actual AI output.',
-      isAiDrafted: true,
+      subject,
+      body: draftBody,
+      isAiDrafted: !!aiOutputRecord,
       createdBy: userId,
     },
   });
@@ -67,7 +121,13 @@ communicationRoutes.post('/draft', async (req: Request, res: Response) => {
       complaintId: body.complaintId,
       eventType: 'communication',
       description: `Draft ${body.type} created`,
-      metadata: { communicationId: communication.id, type: body.type, isAiDrafted: true },
+      metadata: {
+        communicationId: communication.id,
+        type: body.type,
+        isAiDrafted: !!aiOutputRecord,
+        model: aiOutputRecord?.model,
+        confidence,
+      },
       createdBy: userId,
     },
   });
@@ -80,8 +140,9 @@ communicationRoutes.post('/draft', async (req: Request, res: Response) => {
       type: body.type,
       subject: communication.subject,
       body: communication.body,
-      isAiDrafted: true,
-      confidence: 0.85,
+      isAiDrafted: !!aiOutputRecord,
+      confidence,
+      model: aiOutputRecord?.model,
     },
   });
 });

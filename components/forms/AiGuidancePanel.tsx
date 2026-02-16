@@ -1,6 +1,7 @@
 'use client';
 
-import { Sparkles, AlertCircle, CheckCircle2, Info } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, AlertCircle, CheckCircle2, Info, Check, X } from 'lucide-react';
 
 interface AiGuidance {
   extractedData: Record<string, unknown>;
@@ -12,6 +13,7 @@ interface AiGuidance {
 
 interface Props {
   guidance: AiGuidance;
+  onAcceptField?: (field: string, value: unknown) => void;
 }
 
 const IMPORTANCE_STYLES = {
@@ -26,10 +28,38 @@ const IMPORTANCE_ICONS = {
   helpful: <Info className="h-4 w-4 text-blue-500" />,
 };
 
-export function AiGuidancePanel({ guidance }: Props) {
+function confidenceColor(confidence: number): string {
+  if (confidence >= 0.7) return 'text-gov-green';
+  if (confidence >= 0.5) return 'text-yellow-600';
+  return 'text-gov-red';
+}
+
+export function AiGuidancePanel({ guidance, onAcceptField }: Props) {
+  const [acceptedFields, setAcceptedFields] = useState<Set<string>>(new Set());
+  const [rejectedFields, setRejectedFields] = useState<Set<string>>(new Set());
+
   const extractedEntries = Object.entries(guidance.extractedData).filter(
-    ([, v]) => v !== null && v !== undefined,
+    ([, v]) => v !== null && v !== undefined && v !== '',
   );
+
+  function handleAccept(field: string, value: unknown) {
+    setAcceptedFields((prev) => new Set([...prev, field]));
+    setRejectedFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+    onAcceptField?.(field, value);
+  }
+
+  function handleReject(field: string) {
+    setRejectedFields((prev) => new Set([...prev, field]));
+    setAcceptedFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  }
 
   return (
     <div className="mt-6 rounded-lg border border-gov-blue-200 bg-gov-blue-50/30 p-5">
@@ -37,28 +67,67 @@ export function AiGuidancePanel({ guidance }: Props) {
         <Sparkles className="h-4 w-4 text-gov-blue-500" />
         <span className="text-sm font-medium text-gov-blue-700">AI Analysis</span>
         {guidance.confidence > 0 && (
-          <span className="ml-auto text-xs text-gov-grey-500">
+          <span className={`ml-auto text-xs font-medium ${confidenceColor(guidance.confidence)}`}>
             {Math.round(guidance.confidence * 100)}% confidence
           </span>
         )}
       </div>
 
-      {/* Extracted data */}
+      {/* Extracted data with accept/reject */}
       {extractedEntries.length > 0 && (
         <div className="mb-4">
           <p className="text-xs font-medium text-gov-grey-600 uppercase tracking-wide mb-2">
             Detected Information
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            {extractedEntries.map(([key, value]) => (
-              <div key={key} className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-gov-green" />
-                <span className="text-sm text-gov-grey-700">
-                  <span className="font-medium">{formatFieldName(key)}:</span>{' '}
-                  {String(value)}
-                </span>
-              </div>
-            ))}
+          <div className="space-y-2">
+            {extractedEntries.map(([key, value]) => {
+              const isAccepted = acceptedFields.has(key);
+              const isRejected = rejectedFields.has(key);
+
+              return (
+                <div
+                  key={key}
+                  className={`flex items-center gap-2 rounded-md border p-2.5 transition-colors ${
+                    isAccepted
+                      ? 'border-green-200 bg-green-50'
+                      : isRejected
+                        ? 'border-gov-grey-200 bg-gov-grey-50 opacity-50'
+                        : 'border-gov-blue-100 bg-white'
+                  }`}
+                >
+                  {isAccepted ? (
+                    <CheckCircle2 className="h-4 w-4 text-gov-green flex-shrink-0" />
+                  ) : (
+                    <Sparkles className="h-4 w-4 text-gov-blue-400 flex-shrink-0" />
+                  )}
+                  <span className="text-sm text-gov-grey-700 flex-1">
+                    <span className="font-medium">{formatFieldName(key)}:</span>{' '}
+                    {String(value)}
+                  </span>
+                  {onAcceptField && !isAccepted && !isRejected && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleAccept(key, value)}
+                        className="p-1 rounded hover:bg-green-100 text-gov-green transition-colors"
+                        title="Accept this suggestion"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleReject(key)}
+                        className="p-1 rounded hover:bg-red-100 text-gov-grey-400 hover:text-gov-red transition-colors"
+                        title="Dismiss this suggestion"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {isAccepted && (
+                    <span className="text-xs text-gov-green font-medium flex-shrink-0">Applied</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

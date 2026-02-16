@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Save, SlidersHorizontal, Bell, Cpu, Loader2, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Save, SlidersHorizontal, Bell, Cpu, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
 import type { PriorityWeights } from '../../../src/shared/types/complaint';
-import { useApiMutation } from '../../../components/hooks/useApi';
+import { useApi, useApiMutation } from '../../../components/hooks/useApi';
 
 const DEFAULT_WEIGHTS: PriorityWeights = {
   riskScore: 0.30,
@@ -13,29 +13,78 @@ const DEFAULT_WEIGHTS: PriorityWeights = {
   resolutionProbability: 0.10,
 };
 
+const DEFAULT_SLA = {
+  line1ResponseHours: 48,
+  line2ResponseHours: 120,
+  businessResponseDays: 14,
+  escalationDays: 21,
+};
+
+interface SettingsData {
+  priorityWeights: PriorityWeights;
+  slaDefaults: typeof DEFAULT_SLA;
+  autoSendEnabled: boolean;
+  autoSendConfidenceThreshold: number;
+  supervisorReviewThreshold: number;
+  aiProvider: string;
+  features: {
+    emailIngestion: boolean;
+    webhookIntake: boolean;
+    publicPortal: boolean;
+    autoResponse: boolean;
+    systemicDetection: boolean;
+  };
+}
+
 export default function SettingsPage() {
+  const { data: loadedSettings, isLoading: isLoadingSettings, error: loadError } = useApi<SettingsData>('/api/v1/settings');
+
   const [weights, setWeights] = useState<PriorityWeights>(DEFAULT_WEIGHTS);
-  const [slaDefaults, setSlaDefaults] = useState({
-    line1ResponseHours: 48,
-    line2ResponseHours: 120,
-    businessResponseDays: 14,
-    escalationDays: 21,
-  });
+  const [slaDefaults, setSlaDefaults] = useState(DEFAULT_SLA);
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
   const [autoSendConfidenceThreshold, setAutoSendConfidenceThreshold] = useState(0.85);
   const [supervisorReviewThreshold, setSupervisorReviewThreshold] = useState(0.70);
   const [aiProvider, setAiProvider] = useState('openai');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const { mutate, isLoading: isSaving, error: saveError } = useApiMutation<unknown>();
 
+  // Populate form from API response
+  useEffect(() => {
+    if (loadedSettings) {
+      setWeights(loadedSettings.priorityWeights);
+      setSlaDefaults(loadedSettings.slaDefaults);
+      setAutoSendEnabled(loadedSettings.autoSendEnabled);
+      setAutoSendConfidenceThreshold(loadedSettings.autoSendConfidenceThreshold);
+      setSupervisorReviewThreshold(loadedSettings.supervisorReviewThreshold);
+      setAiProvider(loadedSettings.aiProvider);
+      setHasUnsavedChanges(false);
+    }
+  }, [loadedSettings]);
+
   const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0);
+  const weightsValid = Math.abs(totalWeight - 1.0) <= 0.01;
+  const thresholdsValid = supervisorReviewThreshold < autoSendConfidenceThreshold;
 
   function updateWeight(key: keyof PriorityWeights, value: number) {
     setWeights((prev) => ({ ...prev, [key]: value }));
+    setHasUnsavedChanges(true);
+  }
+
+  function handleResetDefaults() {
+    setWeights(DEFAULT_WEIGHTS);
+    setSlaDefaults(DEFAULT_SLA);
+    setAutoSendEnabled(false);
+    setAutoSendConfidenceThreshold(0.85);
+    setSupervisorReviewThreshold(0.70);
+    setAiProvider('openai');
+    setHasUnsavedChanges(true);
+    setSaveSuccess(false);
   }
 
   async function handleSave() {
+    if (!weightsValid) return;
     setSaveSuccess(false);
     const result = await mutate('/api/v1/settings', 'PATCH', {
       priorityWeights: weights,
@@ -47,17 +96,49 @@ export default function SettingsPage() {
     });
     if (result !== null) {
       setSaveSuccess(true);
+      setHasUnsavedChanges(false);
       setTimeout(() => setSaveSuccess(false), 3000);
     }
   }
 
+  if (isLoadingSettings) {
+    return (
+      <div className="animate-pulse space-y-6">
+        <div className="h-8 w-48 bg-gov-grey-200 rounded" />
+        <div className="card p-6 space-y-4">
+          <div className="h-5 w-64 bg-gov-grey-200 rounded" />
+          <div className="h-4 w-full bg-gov-grey-100 rounded" />
+          <div className="h-4 w-3/4 bg-gov-grey-100 rounded" />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="card p-8 text-center">
+        <p className="text-sm text-gov-red mb-2">Failed to load settings</p>
+        <p className="text-xs text-gov-grey-500">{loadError}</p>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gov-grey-900">Settings</h1>
-        <p className="mt-1 text-sm text-gov-grey-500">
-          Configure triage weights, SLA defaults, and platform behaviour.
-        </p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gov-grey-900">Settings</h1>
+          <p className="mt-1 text-sm text-gov-grey-500">
+            Configure triage weights, SLA defaults, and platform behaviour.
+          </p>
+        </div>
+        <button
+          onClick={handleResetDefaults}
+          className="btn-secondary gap-1.5 text-sm"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          Reset to Defaults
+        </button>
       </div>
 
       <div className="space-y-6">
@@ -70,8 +151,8 @@ export default function SettingsPage() {
           <div className="p-6">
             <p className="text-sm text-gov-grey-600 mb-6">
               Adjust how different factors contribute to the overall priority score.
-              Weights should sum to 1.0.
-              <span className={`ml-2 font-mono font-medium ${Math.abs(totalWeight - 1.0) > 0.01 ? 'text-gov-red' : 'text-gov-green'}`}>
+              Weights must sum to 1.0.
+              <span className={`ml-2 font-mono font-medium ${weightsValid ? 'text-gov-green' : 'text-gov-red'}`}>
                 (Current total: {totalWeight.toFixed(2)})
               </span>
             </p>
@@ -104,6 +185,12 @@ export default function SettingsPage() {
                 </div>
               ))}
             </div>
+
+            {!weightsValid && (
+              <div className="mt-4 rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                Weights must sum to 1.0 before saving. Current total: {totalWeight.toFixed(2)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -120,8 +207,13 @@ export default function SettingsPage() {
               </label>
               <input
                 type="number"
+                min="1"
+                max="720"
                 value={slaDefaults.line1ResponseHours}
-                onChange={(e) => setSlaDefaults(prev => ({ ...prev, line1ResponseHours: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setSlaDefaults(prev => ({ ...prev, line1ResponseHours: Number(e.target.value) }));
+                  setHasUnsavedChanges(true);
+                }}
                 className="input-field"
               />
             </div>
@@ -131,8 +223,13 @@ export default function SettingsPage() {
               </label>
               <input
                 type="number"
+                min="1"
+                max="720"
                 value={slaDefaults.line2ResponseHours}
-                onChange={(e) => setSlaDefaults(prev => ({ ...prev, line2ResponseHours: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setSlaDefaults(prev => ({ ...prev, line2ResponseHours: Number(e.target.value) }));
+                  setHasUnsavedChanges(true);
+                }}
                 className="input-field"
               />
             </div>
@@ -142,8 +239,13 @@ export default function SettingsPage() {
               </label>
               <input
                 type="number"
+                min="1"
+                max="90"
                 value={slaDefaults.businessResponseDays}
-                onChange={(e) => setSlaDefaults(prev => ({ ...prev, businessResponseDays: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setSlaDefaults(prev => ({ ...prev, businessResponseDays: Number(e.target.value) }));
+                  setHasUnsavedChanges(true);
+                }}
                 className="input-field"
               />
             </div>
@@ -153,8 +255,13 @@ export default function SettingsPage() {
               </label>
               <input
                 type="number"
+                min="1"
+                max="90"
                 value={slaDefaults.escalationDays}
-                onChange={(e) => setSlaDefaults(prev => ({ ...prev, escalationDays: Number(e.target.value) }))}
+                onChange={(e) => {
+                  setSlaDefaults(prev => ({ ...prev, escalationDays: Number(e.target.value) }));
+                  setHasUnsavedChanges(true);
+                }}
                 className="input-field"
               />
             </div>
@@ -172,7 +279,10 @@ export default function SettingsPage() {
               <label className="block text-sm font-medium text-gov-grey-700 mb-1">AI Provider</label>
               <select
                 value={aiProvider}
-                onChange={(e) => setAiProvider(e.target.value)}
+                onChange={(e) => {
+                  setAiProvider(e.target.value);
+                  setHasUnsavedChanges(true);
+                }}
                 className="input-field w-auto"
               >
                 <option value="openai">OpenAI (GPT-4o)</option>
@@ -186,7 +296,10 @@ export default function SettingsPage() {
                 type="checkbox"
                 id="autoSend"
                 checked={autoSendEnabled}
-                onChange={(e) => setAutoSendEnabled(e.target.checked)}
+                onChange={(e) => {
+                  setAutoSendEnabled(e.target.checked);
+                  setHasUnsavedChanges(true);
+                }}
                 className="h-4 w-4 rounded border-gov-grey-300 text-gov-blue-500 focus:ring-gov-blue-500"
               />
               <div>
@@ -216,7 +329,10 @@ export default function SettingsPage() {
                     max="1.0"
                     step="0.05"
                     value={autoSendConfidenceThreshold}
-                    onChange={(e) => setAutoSendConfidenceThreshold(parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      setAutoSendConfidenceThreshold(parseFloat(e.target.value));
+                      setHasUnsavedChanges(true);
+                    }}
                     className="flex-1"
                   />
                   <span className="w-12 text-right text-sm font-mono text-gov-grey-600">
@@ -239,7 +355,10 @@ export default function SettingsPage() {
                     max="1.0"
                     step="0.05"
                     value={supervisorReviewThreshold}
-                    onChange={(e) => setSupervisorReviewThreshold(parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      setSupervisorReviewThreshold(parseFloat(e.target.value));
+                      setHasUnsavedChanges(true);
+                    }}
                     className="flex-1"
                   />
                   <span className="w-12 text-right text-sm font-mono text-gov-grey-600">
@@ -248,7 +367,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {supervisorReviewThreshold >= autoSendConfidenceThreshold && (
+              {!thresholdsValid && (
                 <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-700">
                   Supervisor review threshold should be lower than the auto-send threshold.
                 </div>
@@ -268,10 +387,13 @@ export default function SettingsPage() {
               Settings saved
             </span>
           )}
+          {hasUnsavedChanges && !saveSuccess && (
+            <span className="text-xs text-gov-grey-400">Unsaved changes</span>
+          )}
           <button
             className="btn-primary gap-2"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || !weightsValid}
           >
             {isSaving ? (
               <>

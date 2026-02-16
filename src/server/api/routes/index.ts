@@ -10,6 +10,7 @@ import { businessRoutes } from './business.routes';
 import { intakeRoutes } from './intake.routes';
 import { systemicRoutes } from './systemic.routes';
 import { communicationRoutes } from './communication.routes';
+import { settingsRoutes } from './settings.routes';
 import { authRoutes } from './auth.routes';
 
 export const apiRouter = Router();
@@ -25,3 +26,4 @@ apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/businesses', businessRoutes);
 apiRouter.use('/systemic', systemicRoutes);
 apiRouter.use('/communications', communicationRoutes);
+apiRouter.use('/settings', settingsRoutes);

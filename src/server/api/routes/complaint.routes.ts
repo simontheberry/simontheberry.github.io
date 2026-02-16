@@ -12,6 +12,7 @@ import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
 import { normalizeQuery } from '../../utils/query-parser';
+import { config } from '../../config';
 
 const logger = createLogger('complaint-routes');
 
@@ -428,15 +429,73 @@ complaintRoutes.get('/:id/similar', async (req: Request, res: Response) => {
   // Verify complaint belongs to tenant
   const complaint = await prisma.complaint.findFirst({
     where: { id, tenantId },
-    select: { id: true, category: true, industry: true, businessId: true },
+    select: { id: true, embeddingId: true, category: true, industry: true, businessId: true },
   });
 
   if (!complaint) {
     throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
   }
 
-  // TODO: Use pgvector similarity search when embeddings are available
-  // For now, find complaints with same category/industry in the same tenant
+  // Try pgvector similarity search if the complaint has an embedding
+  if (complaint.embeddingId) {
+    try {
+      const threshold = config.SIMILARITY_THRESHOLD;
+      const vectorResults = await prisma.$queryRaw<Array<{
+        id: string;
+        reference_number: string;
+        summary: string | null;
+        category: string | null;
+        risk_level: string | null;
+        status: string;
+        created_at: Date;
+        similarity: number;
+      }>>`
+        SELECT
+          c.id,
+          c.reference_number,
+          c.summary,
+          c.category,
+          c.risk_level,
+          c.status,
+          c.created_at,
+          1 - (ce.embedding <=> target.embedding) AS similarity
+        FROM complaint_embeddings ce
+        JOIN complaints c ON c.id = ce.complaint_id
+        CROSS JOIN (
+          SELECT embedding FROM complaint_embeddings WHERE complaint_id = ${id}
+        ) AS target
+        WHERE ce.complaint_id != ${id}
+          AND ce.tenant_id = ${tenantId}
+          AND 1 - (ce.embedding <=> target.embedding) > ${threshold}
+        ORDER BY similarity DESC
+        LIMIT 10
+      `;
+
+      if (vectorResults.length > 0) {
+        res.json({
+          success: true,
+          data: vectorResults.map((r) => ({
+            id: r.id,
+            referenceNumber: r.reference_number,
+            summary: r.summary,
+            category: r.category,
+            riskLevel: r.risk_level,
+            status: r.status,
+            createdAt: r.created_at,
+            similarity: Math.round(Number(r.similarity) * 1000) / 1000,
+          })),
+        });
+        return;
+      }
+    } catch (error) {
+      logger.warn('pgvector similarity search failed, falling back to category match', {
+        complaintId: id,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  // Fallback: find complaints with same category/industry in the same tenant
   const similar = await prisma.complaint.findMany({
     where: {
       tenantId,

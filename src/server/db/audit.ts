@@ -36,6 +36,12 @@ export async function writeAuditLog(entry: AuditLogEntry): Promise<void> {
       },
     });
   } catch (err) {
-    logger.error('Failed to write audit log', { error: (err as Error).message, entry });
+    // Only log safe identifiers -- never dump oldValues/newValues which may contain PII
+    logger.error('Failed to write audit log', {
+      error: (err as Error).message,
+      action: entry.action,
+      entity: entry.entity,
+      entityId: entry.entityId,
+    });
   }
 }
