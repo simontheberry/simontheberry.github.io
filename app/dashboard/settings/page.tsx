@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Save, SlidersHorizontal, Shield, Bell, Cpu } from 'lucide-react';
+import { Save, SlidersHorizontal, Bell, Cpu, Loader2, CheckCircle2 } from 'lucide-react';
 import type { PriorityWeights } from '../../../src/shared/types/complaint';
+import { useApiMutation } from '../../../components/hooks/useApi';
 
 const DEFAULT_WEIGHTS: PriorityWeights = {
   riskScore: 0.30,
@@ -21,12 +22,33 @@ export default function SettingsPage() {
     escalationDays: 21,
   });
   const [autoSendEnabled, setAutoSendEnabled] = useState(false);
+  const [autoSendConfidenceThreshold, setAutoSendConfidenceThreshold] = useState(0.85);
+  const [supervisorReviewThreshold, setSupervisorReviewThreshold] = useState(0.70);
   const [aiProvider, setAiProvider] = useState('openai');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const { mutate, isLoading: isSaving, error: saveError } = useApiMutation<unknown>();
 
   const totalWeight = Object.values(weights).reduce((sum, w) => sum + w, 0);
 
   function updateWeight(key: keyof PriorityWeights, value: number) {
     setWeights((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleSave() {
+    setSaveSuccess(false);
+    const result = await mutate('/api/v1/settings', 'PATCH', {
+      priorityWeights: weights,
+      slaDefaults,
+      autoSendEnabled,
+      autoSendConfidenceThreshold,
+      supervisorReviewThreshold,
+      aiProvider,
+    });
+    if (result !== null) {
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    }
   }
 
   return (
@@ -177,14 +199,91 @@ export default function SettingsPage() {
                 </p>
               </div>
             </div>
+
+            {/* Confidence Thresholds */}
+            <div className="border-t border-gov-grey-100 pt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gov-grey-700 mb-1">
+                  Auto-Send Confidence Threshold
+                </label>
+                <p className="text-xs text-gov-grey-500 mb-2">
+                  AI-drafted responses will only be auto-sent when confidence exceeds this threshold.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="1.0"
+                    step="0.05"
+                    value={autoSendConfidenceThreshold}
+                    onChange={(e) => setAutoSendConfidenceThreshold(parseFloat(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-right text-sm font-mono text-gov-grey-600">
+                    {(autoSendConfidenceThreshold * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gov-grey-700 mb-1">
+                  Supervisor Review Threshold
+                </label>
+                <p className="text-xs text-gov-grey-500 mb-2">
+                  Responses below this confidence will be flagged for mandatory supervisor review.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0.3"
+                    max="1.0"
+                    step="0.05"
+                    value={supervisorReviewThreshold}
+                    onChange={(e) => setSupervisorReviewThreshold(parseFloat(e.target.value))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-right text-sm font-mono text-gov-grey-600">
+                    {(supervisorReviewThreshold * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+
+              {supervisorReviewThreshold >= autoSendConfidenceThreshold && (
+                <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-700">
+                  Supervisor review threshold should be lower than the auto-send threshold.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <button className="btn-primary gap-2">
-            <Save className="h-4 w-4" />
-            Save Settings
+        {/* Save */}
+        <div className="flex items-center justify-end gap-3">
+          {saveError && (
+            <span className="text-sm text-gov-red">{saveError}</span>
+          )}
+          {saveSuccess && (
+            <span className="flex items-center gap-1 text-sm text-gov-green">
+              <CheckCircle2 className="h-4 w-4" />
+              Settings saved
+            </span>
+          )}
+          <button
+            className="btn-primary gap-2"
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Save Settings
+              </>
+            )}
           </button>
         </div>
       </div>

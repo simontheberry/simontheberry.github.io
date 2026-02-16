@@ -51,6 +51,8 @@ export interface TenantSettings {
     escalationDays: number;
   };
   autoSendEnabled: boolean;
+  autoSendConfidenceThreshold: number;
+  supervisorReviewThreshold: number;
   aiProvider: 'openai' | 'anthropic' | 'azure_openai' | 'custom';
   features: {
     emailIngestion: boolean;

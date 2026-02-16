@@ -5,6 +5,7 @@
 
 import { createLogger } from '../../utils/logger';
 import { getAiService, type AiOutputRecord } from '../ai/ai-service';
+import { calculatePriorityScore, riskLevelToNumeric } from './priority-calculator';
 import type {
   ComplaintCategory,
   RiskLevel,
@@ -74,18 +75,16 @@ export class TriageEngine {
       resolutionProbability: 0.10,
     };
 
-    const riskScore = this.riskLevelToScore(risk.riskLevel as string);
-    const systemicImpact = risk.systemicImpactScore as number || 0;
-    const monetaryHarm = complexityFactors.monetaryValue || 0;
-    const vulnerability = risk.vulnerabilityScore as number || 0;
-    const resolutionProb = risk.resolutionProbability as number || 0.5;
-
-    const priorityScore =
-      (riskScore * weights.riskScore) +
-      (systemicImpact * weights.systemicImpact) +
-      (monetaryHarm * weights.monetaryHarm) +
-      (vulnerability * weights.vulnerabilityIndicator) +
-      ((1 - resolutionProb) * weights.resolutionProbability);
+    const priorityScore = calculatePriorityScore(
+      {
+        riskScore: riskLevelToNumeric(risk.riskLevel as string),
+        systemicImpact: risk.systemicImpactScore as number || 0,
+        monetaryHarm: complexityFactors.monetaryValue || 0,
+        vulnerabilityIndicator: risk.vulnerabilityScore as number || 0,
+        resolutionProbability: risk.resolutionProbability as number || 0.5,
+      },
+      weights,
+    );
 
     // ---- Step 6: Determine routing ----
     const routingDestination = this.determineRouting(
@@ -131,16 +130,6 @@ export class TriageEngine {
       aiOutputs,
       summary: (summary as Record<string, unknown>).executiveSummary as string || '',
     };
-  }
-
-  private riskLevelToScore(level: string): number {
-    switch (level) {
-      case 'critical': return 1.0;
-      case 'high': return 0.75;
-      case 'medium': return 0.5;
-      case 'low': return 0.25;
-      default: return 0.5;
-    }
   }
 
   private determineRouting(

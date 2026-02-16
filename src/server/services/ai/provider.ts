@@ -146,11 +146,20 @@ export class AnthropicProvider implements AiProvider {
     const start = Date.now();
     const model = options.model || this.defaultModel;
 
-    // Extract system message
-    const systemMessage = messages.find(m => m.role === 'system')?.content || '';
+    // Extract system message and enforce JSON output instruction
+    let systemMessage = messages.find(m => m.role === 'system')?.content || '';
+    if (options.jsonMode && !systemMessage.includes('valid JSON')) {
+      systemMessage += '\n\nYou must respond ONLY with valid JSON. Do not include any text outside the JSON object.';
+    }
+
     const userMessages = messages
       .filter(m => m.role !== 'system')
       .map(m => ({ role: m.role, content: m.content }));
+
+    // Prefill assistant response with `{` to enforce JSON output
+    if (options.jsonMode) {
+      userMessages.push({ role: 'assistant' as const, content: '{' });
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -162,6 +171,7 @@ export class AnthropicProvider implements AiProvider {
       body: JSON.stringify({
         model,
         max_tokens: options.maxTokens ?? 4096,
+        temperature: options.temperature ?? 0.1,
         system: systemMessage,
         messages: userMessages,
       }),
@@ -178,8 +188,12 @@ export class AnthropicProvider implements AiProvider {
       usage: { input_tokens: number; output_tokens: number };
     };
 
+    // When JSON mode is enabled, we prefilled `{` so the response continues from there
+    const rawContent = data.content[0].text;
+    const content = options.jsonMode ? `{${rawContent}` : rawContent;
+
     return {
-      content: data.content[0].text,
+      content,
       model,
       tokenUsage: {
         promptTokens: data.usage.input_tokens,

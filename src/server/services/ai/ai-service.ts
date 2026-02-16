@@ -43,9 +43,12 @@ export class AiService {
   private provider: AiProvider;
 
   constructor(provider?: AiProvider) {
+    const apiKey = config.AI_PROVIDER === 'anthropic'
+      ? config.ANTHROPIC_API_KEY || ''
+      : config.OPENAI_API_KEY || '';
     this.provider = provider || createAiProvider(
       config.AI_PROVIDER,
-      config.OPENAI_API_KEY || config.ANTHROPIC_API_KEY || '',
+      apiKey,
       config.AI_MODEL,
       config.EMBEDDING_MODEL,
     );
@@ -74,8 +77,19 @@ export class AiService {
     try {
       parsed = JSON.parse(completion.content) as T;
     } catch {
-      logger.error('Failed to parse AI JSON response', { outputType, content: completion.content });
+      logger.error('Failed to parse AI JSON response', { outputType, content: completion.content.slice(0, 200) });
       throw new Error(`AI returned invalid JSON for ${outputType}`);
+    }
+
+    const confidence = (parsed as Record<string, unknown>)?.confidence as number ?? null;
+    const reasoning = (parsed as Record<string, unknown>)?.reasoning as string ?? null;
+
+    // Anomaly detection: perfect confidence on complex analyses is suspicious
+    if (confidence === 1.0 && ['classification', 'risk_scoring', 'extraction'].includes(outputType)) {
+      logger.warn(`Suspicious perfect confidence on ${outputType}`, {
+        model: completion.model,
+        outputType,
+      });
     }
 
     const record: AiOutputRecord = {
@@ -84,8 +98,8 @@ export class AiService {
       prompt: userPrompt.slice(0, 500), // Truncate for storage
       rawOutput: completion.content,
       parsedOutput: parsed,
-      confidence: (parsed as Record<string, unknown>)?.confidence as number ?? null,
-      reasoning: (parsed as Record<string, unknown>)?.reasoning as string ?? null,
+      confidence,
+      reasoning,
       tokenUsage: completion.tokenUsage,
       latencyMs: completion.latencyMs,
     };
@@ -94,6 +108,7 @@ export class AiService {
       model: completion.model,
       tokens: completion.tokenUsage.totalTokens,
       latencyMs: completion.latencyMs,
+      confidence,
     });
 
     return { result: parsed, record };

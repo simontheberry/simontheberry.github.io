@@ -56,6 +56,7 @@ Respond with this exact JSON schema:
   "urgencyIndicators": [string],
   "vulnerabilityIndicators": [string],
   "keyFacts": [string],
+  "reasoning": string,
   "confidence": number
 }`;
 
@@ -148,6 +149,7 @@ Respond with this exact JSON schema:
   "executiveSummary": string,
   "keyIssues": [string],
   "recommendedActions": [string],
+  "reasoning": string,
   "confidence": number
 }`;
 
@@ -184,6 +186,7 @@ Respond with this exact JSON schema:
   ],
   "followUpQuestions": [string],
   "completenessScore": number,
+  "reasoning": string,
   "confidence": number
 }`;
 
@@ -212,6 +215,7 @@ Respond with this exact JSON schema:
 {
   "subject": string,
   "body": string,
+  "reasoning": string,
   "confidence": number
 }`;
 
@@ -240,6 +244,7 @@ Respond with this exact JSON schema:
   "subject": string,
   "body": string,
   "responseDeadlineDays": number,
+  "reasoning": string,
   "confidence": number
 }`;
 
@@ -268,15 +273,42 @@ Respond with this exact JSON schema:
   "potentialRegulatoryConcern": string,
   "recommendedAction": string,
   "riskLevel": "low" | "medium" | "high" | "critical",
+  "reasoning": string,
   "confidence": number
 }`;
 
+// ---- Input Sanitization ----
+
+/**
+ * Sanitize user-provided text before interpolation into prompts.
+ * Escapes triple-quote delimiters that could break prompt structure.
+ * Strips control characters that could confuse model parsing.
+ */
+export function sanitizePromptInput(input: string): string {
+  return input
+    .replace(/"""/g, '"\u200B"\u200B"')  // Break triple-quote sequences with zero-width spaces
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ''); // Strip control chars (preserve \n \r \t)
+}
+
 // ---- Template Interpolation Utility ----
+
+/**
+ * Keys listed here contain user-supplied text and will be sanitized
+ * before interpolation to mitigate prompt injection.
+ */
+const USER_INPUT_KEYS = new Set([
+  'complaintText',
+  'summary',
+  'businessName',
+  'issues',
+  'currentData',
+]);
 
 export function interpolatePrompt(template: string, variables: Record<string, string>): string {
   let result = template;
   for (const [key, value] of Object.entries(variables)) {
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    const safeValue = USER_INPUT_KEYS.has(key) ? sanitizePromptInput(value) : value;
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), safeValue);
   }
   return result;
 }

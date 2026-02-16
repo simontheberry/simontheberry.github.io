@@ -181,11 +181,13 @@ model Complaint {
 model ComplaintEmbedding {
   id          String @id @default(uuid())
   complaintId String @unique @map("complaint_id")
+  tenantId    String @map("tenant_id")
   // vector(1536) column created via raw SQL migration
   // embedding Unsupported("vector(1536)")
   model       String @default("text-embedding-ada-002")
   createdAt   DateTime @default(now()) @map("created_at")
 
+  @@index([tenantId])
   @@map("complaint_embeddings")
 }
 

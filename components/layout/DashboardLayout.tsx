@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Shield,
   LayoutDashboard,
@@ -16,6 +16,7 @@ import {
   X,
   Bell,
 } from 'lucide-react';
+import { useAuth } from '../providers/AuthProvider';
 
 interface NavItem {
   label: string;
@@ -65,12 +66,27 @@ const NAV_ITEMS: NavItem[] = [
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // TODO: Get from auth context
-  const userRole = 'admin';
+  const userRole = user?.role ?? 'complaint_officer';
 
   const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(userRole));
+
+  // Redirect to login if not authenticated
+  if (!isLoading && !isAuthenticated) {
+    router.replace('/login');
+    return null;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gov-grey-50 flex items-center justify-center">
+        <div className="text-sm text-gov-grey-500">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gov-grey-50">
@@ -99,9 +115,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </button>
             <div className="flex items-center gap-2">
               <div className="h-7 w-7 rounded-full bg-gov-blue-500 flex items-center justify-center text-xs font-medium text-white">
-                DU
+                {user ? `${user.firstName[0]}${user.lastName[0]}` : '--'}
               </div>
-              <span className="text-sm text-white/80 hidden sm:block">Demo User</span>
+              <span className="text-sm text-white/80 hidden sm:block">
+                {user ? `${user.firstName} ${user.lastName}` : ''}
+              </span>
+              <button
+                onClick={logout}
+                className="text-white/60 hover:text-white ml-1"
+                aria-label="Log out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+const INSECURE_JWT_DEFAULT = 'dev-secret-change-in-production';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -15,7 +17,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   // JWT
-  JWT_SECRET: z.string().default('dev-secret-change-in-production'),
+  JWT_SECRET: z.string().default(INSECURE_JWT_DEFAULT),
   JWT_EXPIRES_IN: z.string().default('8h'),
 
   // AI Providers
@@ -53,6 +55,21 @@ const envSchema = z.object({
   CLUSTER_MIN_COMPLAINTS: z.coerce.number().default(3),
   SPIKE_DETECTION_WINDOW_HOURS: z.coerce.number().default(24),
   SPIKE_DETECTION_THRESHOLD: z.coerce.number().default(5),
+}).superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production' && data.JWT_SECRET === INSECURE_JWT_DEFAULT) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['JWT_SECRET'],
+      message: 'JWT_SECRET must be set to a secure value in production. Do not use the default.',
+    });
+  }
+  if (data.NODE_ENV === 'production' && data.DATABASE_URL.includes('localhost')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['DATABASE_URL'],
+      message: 'DATABASE_URL should not point to localhost in production.',
+    });
+  }
 });
 
 function loadConfig() {
