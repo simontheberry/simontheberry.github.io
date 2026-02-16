@@ -264,7 +264,7 @@ dashboardRoutes.get(
 // All authenticated users can view trends
 dashboardRoutes.get('/trends', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
-  const { period = '30d' } = req.query;
+  const { period = '30d' } = req.query as { period?: string };
 
   const daysBack = period === '7d' ? 7 : period === '90d' ? 90 : 30;
   const startDate = new Date();

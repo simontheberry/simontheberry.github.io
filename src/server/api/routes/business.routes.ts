@@ -51,7 +51,7 @@ businessRoutes.get('/search', async (req: Request, res: Response) => {
 
 // GET /api/v1/businesses/:id -- Get business with complaint history
 businessRoutes.get('/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   const business = await prisma.business.findFirst({
@@ -85,7 +85,7 @@ businessRoutes.get('/:id', async (req: Request, res: Response) => {
 
 // GET /api/v1/businesses/:id/complaints -- Get complaints for a business
 businessRoutes.get('/:id/complaints', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   // Verify business belongs to tenant

@@ -37,7 +37,7 @@ systemicRoutes.get('/clusters', async (req: Request, res: Response) => {
 
 // GET /api/v1/systemic/clusters/:id -- Get cluster detail
 systemicRoutes.get('/clusters/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   const cluster = await prisma.systemicCluster.findFirst({
@@ -75,7 +75,7 @@ systemicRoutes.post(
   '/clusters/:id/acknowledge',
   authorize('supervisor', 'executive', 'admin'),
   async (req: Request, res: Response) => {
-    const { id } = req.params;
+    const { id } = req.params as { id: string };
     const tenantId = req.tenantId!;
     const userId = req.userId!;
 

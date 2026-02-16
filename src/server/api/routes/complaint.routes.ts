@@ -138,7 +138,7 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id -- Get complaint detail
 complaintRoutes.get('/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   const complaint = await prisma.complaint.findFirst({
@@ -168,7 +168,7 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
 // PATCH /api/v1/complaints/:id -- Update complaint
 // Only supervisors, admins, or the assigned officer can update
 complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
   const userId = req.userId!;
   const userRole = req.userRole!;
@@ -247,7 +247,7 @@ complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
 
 // POST /api/v1/complaints/:id/assign -- Assign complaint to officer
 complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
   const userId = req.userId!;
   const body = assignSchema.parse(req.body);
@@ -322,7 +322,7 @@ complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req
 
 // POST /api/v1/complaints/:id/escalate -- Escalate complaint
 complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
   const userId = req.userId!;
   const body = escalateSchema.parse(req.body);
@@ -395,7 +395,7 @@ complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id/timeline -- Get complaint event timeline
 complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   // Verify complaint belongs to tenant
@@ -422,7 +422,7 @@ complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id/similar -- Find similar complaints
 complaintRoutes.get('/:id/similar', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as { id: string };
   const tenantId = req.tenantId!;
 
   // Verify complaint belongs to tenant

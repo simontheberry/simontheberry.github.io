@@ -27,7 +27,7 @@ const overrideSchema = z.object({
 
 // POST /api/v1/triage/:complaintId -- Trigger triage for a complaint
 triageRoutes.post('/:complaintId', async (req: Request, res: Response) => {
-  const { complaintId } = req.params;
+  const { complaintId } = req.params as { complaintId: string };
   const tenantId = req.tenantId!;
 
   // Verify complaint exists and belongs to tenant
@@ -73,7 +73,7 @@ triageRoutes.post(
   '/:complaintId/override',
   authorize('supervisor', 'admin'),
   async (req: Request, res: Response) => {
-    const { complaintId } = req.params;
+    const { complaintId } = req.params as { complaintId: string };
     const tenantId = req.tenantId!;
     const userId = req.userId!;
     const body = overrideSchema.parse(req.body);
@@ -148,7 +148,7 @@ triageRoutes.post(
 
 // GET /api/v1/triage/:complaintId/result -- Get triage result for a complaint
 triageRoutes.get('/:complaintId/result', async (req: Request, res: Response) => {
-  const { complaintId } = req.params;
+  const { complaintId } = req.params as { complaintId: string };
   const tenantId = req.tenantId!;
 
   // Verify complaint exists and belongs to tenant
