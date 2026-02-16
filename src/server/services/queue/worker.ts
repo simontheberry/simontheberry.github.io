@@ -55,6 +55,7 @@ export const QUEUES = {
 
 let triageQueue: Queue | null = null;
 let systemicQueue: Queue | null = null;
+let slaQueue: Queue | null = null;
 
 export function getTriageQueue(): Queue | null {
   return triageQueue;
@@ -62,6 +63,10 @@ export function getTriageQueue(): Queue | null {
 
 export function getSystemicQueue(): Queue | null {
   return systemicQueue;
+}
+
+export function getSlaQueue(): Queue | null {
+  return slaQueue;
 }
 
 // ---- Worker Processors ----
@@ -471,7 +476,7 @@ export async function startWorkers(): Promise<void> {
   // Create queues for enqueuing jobs from routes
   triageQueue = new Queue(QUEUES.COMPLAINT_TRIAGE, { connection });
   systemicQueue = new Queue(QUEUES.SYSTEMIC_DETECTION, { connection });
-  const slaQueue = new Queue(QUEUES.SLA_MONITOR, { connection });
+  slaQueue = new Queue(QUEUES.SLA_MONITOR, { connection });
 
   // Triage worker
   const triageWorker = new Worker(

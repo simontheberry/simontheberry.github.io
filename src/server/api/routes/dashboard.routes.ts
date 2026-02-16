@@ -30,8 +30,6 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
     systemicAlerts,
     slaBreaches,
     slaApproaching,
-    resolvedWithSla,
-    resolvedWithinSla,
   ] = await Promise.all([
     prisma.complaint.count({ where: { tenantId } }),
     prisma.complaint.count({
@@ -59,21 +57,26 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
         status: { notIn: ['resolved', 'closed', 'withdrawn', 'escalated'] },
       },
     }),
-    // SLA compliance: resolved complaints that had an SLA deadline
-    prisma.complaint.count({
-      where: { tenantId, status: { in: ['resolved', 'closed'] }, slaDeadline: { not: null } },
-    }),
-    // Resolved within SLA: resolved before the deadline
-    prisma.complaint.count({
-      where: {
-        tenantId,
-        status: { in: ['resolved', 'closed'] },
-        slaDeadline: { not: null },
-        resolvedAt: { not: null },
-        // Can't do resolvedAt < slaDeadline in Prisma, calculated below
-      },
-    }),
   ]);
+
+  // SLA compliance rate: % of resolved complaints that were resolved before their SLA deadline
+  // Uses raw SQL because Prisma can't compare two columns directly
+  const slaComplianceResult = await prisma.$queryRaw<Array<{
+    total: bigint;
+    within_sla: bigint;
+  }>>`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE resolved_at <= sla_deadline) AS within_sla
+    FROM complaints
+    WHERE tenant_id = ${tenantId}
+      AND status IN ('resolved', 'closed')
+      AND sla_deadline IS NOT NULL
+      AND resolved_at IS NOT NULL
+  `;
+  const slaTotal = Number(slaComplianceResult[0]?.total ?? 0);
+  const slaWithin = Number(slaComplianceResult[0]?.within_sla ?? 0);
+  const slaComplianceRate = slaTotal > 0 ? Math.round((slaWithin / slaTotal) * 1000) / 10 : null;
 
   // Calculate average resolution days from resolved complaints
   const resolvedComplaints = await prisma.complaint.findMany({
@@ -105,6 +108,8 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
       systemicAlerts,
       pendingTriage,
       slaBreaches,
+      slaApproaching,
+      slaComplianceRate,
     },
   });
 });
