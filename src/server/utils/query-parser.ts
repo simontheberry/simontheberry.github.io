@@ -14,13 +14,20 @@ export function getQueryParam(value: string | string[] | undefined): string | un
 }
 
 /**
- * Normalize Express query object (string | string[]) to plain object (string | undefined)
- * Zod can then safely parse it
+ * Normalize Express query object (which can include ParsedQs nested objects)
+ * to plain object (string | undefined) that Zod can safely parse
  */
-export function normalizeQuery(query: Record<string, string | string[] | undefined>): Record<string, string | undefined> {
+export function normalizeQuery(query: Record<string, any>): Record<string, string | undefined> {
   const normalized: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(query)) {
-    normalized[key] = getQueryParam(value);
+    // Handle string, string[], or undefined; ignore nested objects
+    if (typeof value === 'string') {
+      normalized[key] = value;
+    } else if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+      normalized[key] = value[0];
+    } else {
+      normalized[key] = undefined;
+    }
   }
   return normalized;
 }

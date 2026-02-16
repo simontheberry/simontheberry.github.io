@@ -75,7 +75,7 @@ const SORT_FIELD_MAP: Record<string, string> = {
 
 // GET /api/v1/complaints -- List complaints with filtering & pagination
 complaintRoutes.get('/', async (req: Request, res: Response) => {
-  const filters = complaintFiltersSchema.parse(normalizeQuery(req.query));
+  const filters = complaintFiltersSchema.parse(normalizeQuery(req.query as any));
   const tenantId = req.tenantId!;
 
   // Build where clause with tenant isolation

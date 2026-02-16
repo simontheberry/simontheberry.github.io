@@ -26,7 +26,7 @@ const abnSearchSchema = z.object({
 
 // GET /api/v1/businesses/search -- Search ABR for business details
 businessRoutes.get('/search', async (req: Request, res: Response) => {
-  const query = abnSearchSchema.parse(normalizeQuery(req.query));
+  const query = abnSearchSchema.parse(normalizeQuery(req.query as any));
   const abnService = new AbnLookupService();
 
   try {
