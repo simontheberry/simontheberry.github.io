@@ -19,6 +19,8 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+  const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
   const [
     totalComplaints,
     openComplaints,
@@ -27,6 +29,9 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
     pendingTriage,
     systemicAlerts,
     slaBreaches,
+    slaApproaching,
+    resolvedWithSla,
+    resolvedWithinSla,
   ] = await Promise.all([
     prisma.complaint.count({ where: { tenantId } }),
     prisma.complaint.count({
@@ -46,6 +51,27 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
     }),
     prisma.complaint.count({
       where: { tenantId, slaDeadline: { lt: now }, status: { notIn: ['resolved', 'closed'] } },
+    }),
+    prisma.complaint.count({
+      where: {
+        tenantId,
+        slaDeadline: { gt: now, lt: in24Hours },
+        status: { notIn: ['resolved', 'closed', 'withdrawn', 'escalated'] },
+      },
+    }),
+    // SLA compliance: resolved complaints that had an SLA deadline
+    prisma.complaint.count({
+      where: { tenantId, status: { in: ['resolved', 'closed'] }, slaDeadline: { not: null } },
+    }),
+    // Resolved within SLA: resolved before the deadline
+    prisma.complaint.count({
+      where: {
+        tenantId,
+        status: { in: ['resolved', 'closed'] },
+        slaDeadline: { not: null },
+        resolvedAt: { not: null },
+        // Can't do resolvedAt < slaDeadline in Prisma, calculated below
+      },
     }),
   ]);
 

@@ -72,15 +72,19 @@ export default function SettingsPage() {
     setHasUnsavedChanges(true);
   }
 
-  function handleResetDefaults() {
-    setWeights(DEFAULT_WEIGHTS);
-    setSlaDefaults(DEFAULT_SLA);
-    setAutoSendEnabled(false);
-    setAutoSendConfidenceThreshold(0.85);
-    setSupervisorReviewThreshold(0.70);
-    setAiProvider('openai');
-    setHasUnsavedChanges(true);
+  async function handleResetDefaults() {
     setSaveSuccess(false);
+    const result = await mutate('/api/v1/settings/reset', 'POST', {});
+    if (result !== null) {
+      const data = result as unknown as SettingsData;
+      setWeights(data.priorityWeights);
+      setSlaDefaults(data.slaDefaults);
+      setAutoSendEnabled(data.autoSendEnabled);
+      setAutoSendConfidenceThreshold(data.autoSendConfidenceThreshold);
+      setSupervisorReviewThreshold(data.supervisorReviewThreshold);
+      setAiProvider(data.aiProvider);
+      setHasUnsavedChanges(false);
+    }
   }
 
   async function handleSave() {

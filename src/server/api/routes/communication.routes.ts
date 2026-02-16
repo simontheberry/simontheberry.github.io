@@ -11,6 +11,7 @@ import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
 import { getAiService } from '../../services/ai/ai-service';
+import { getMailService } from '../../services/mail/mail.service';
 
 const logger = createLogger('communication-routes');
 
@@ -167,6 +168,25 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     throw new AppError(400, 'ALREADY_SENT', 'This communication has already been sent');
   }
 
+  // Get recipient based on communication type
+  let recipientEmail: string | null = null;
+
+  if (communication.type === 'email_to_complainant') {
+    // Fetch complainant email from complaint
+    const complaint = await prisma.complaint.findUnique({
+      where: { id: communication.complaintId },
+      select: { complainantEmail: true },
+    });
+    recipientEmail = complaint?.complainantEmail || null;
+  } else if (communication.type === 'email_to_business') {
+    // Fetch business email from complaint's business
+    const complaint = await prisma.complaint.findUnique({
+      where: { id: communication.complaintId },
+      include: { business: { select: { email: true } } },
+    });
+    recipientEmail = complaint?.business?.email || null;
+  }
+
   // Mark as approved and sent
   const now = new Date();
   await prisma.communication.update({
@@ -178,12 +198,43 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     },
   });
 
+  let emailSent = false;
+  let emailError: string | null = null;
+
+  // Attempt to send email if we have a recipient
+  if (recipientEmail && (communication.type === 'email_to_complainant' || communication.type === 'email_to_business')) {
+    const mailService = getMailService();
+    const result = await mailService.sendCommunication(
+      recipientEmail,
+      communication.subject || 'Communication from Regulatory Authority',
+      communication.body,
+      communication.type as 'email_to_complainant' | 'email_to_business',
+    );
+
+    emailSent = result.success;
+    emailError = result.error || null;
+
+    if (!result.success) {
+      logger.warn('Email sending failed', {
+        communicationId: body.communicationId,
+        recipientEmail,
+        error: result.error,
+      });
+    }
+  }
+
   await prisma.complaintEvent.create({
     data: {
       complaintId: communication.complaintId,
       eventType: 'communication',
-      description: `Communication sent (${communication.type})`,
-      metadata: { communicationId: body.communicationId, approvedBy: userId },
+      description: `Communication sent (${communication.type})${emailSent ? ' - email delivered' : emailError ? ` - email failed: ${emailError}` : ''}`,
+      metadata: {
+        communicationId: body.communicationId,
+        approvedBy: userId,
+        emailSent,
+        emailError,
+        recipientEmail: recipientEmail || undefined,
+      },
       createdBy: userId,
     },
   });
@@ -194,16 +245,29 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     action: 'communication.sent',
     entity: 'Communication',
     entityId: body.communicationId,
-    newValues: { approvedBy: userId, sentAt: now.toISOString() },
+    newValues: {
+      approvedBy: userId,
+      sentAt: now.toISOString(),
+      emailSent,
+      emailError,
+    },
   });
 
-  logger.info('Communication sent', { communicationId: body.communicationId, userId });
-
-  // TODO: Actually send email via SMTP when configured
+  logger.info('Communication sent', {
+    communicationId: body.communicationId,
+    userId,
+    emailSent,
+    recipientEmail,
+  });
 
   res.json({
     success: true,
-    data: { communicationId: body.communicationId, sentAt: now.toISOString() },
+    data: {
+      communicationId: body.communicationId,
+      sentAt: now.toISOString(),
+      emailSent,
+      emailError,
+    },
   });
 });
 
