@@ -204,6 +204,41 @@ export class AiService {
     return this.runPipeline(SYSTEM_PROMPTS.COMPLAINT_ANALYST, prompt, 'clustering_analysis');
   }
 
+  // ---- Evidence Analysis ----
+
+  async analyzeEvidence(fileContent: string, complaintSummary: string, filename: string) {
+    const prompt = `
+You are analyzing supporting evidence attached to a complaint.
+
+**Complaint Summary:**
+${complaintSummary}
+
+**Evidence Document:** ${filename}
+
+**Document Content:**
+${fileContent.substring(0, 2000)}
+
+Analyze this evidence and identify:
+1. How it supports or contradicts the complaint
+2. Key factual claims that can be verified
+3. Any new information not mentioned in the complaint
+4. Severity indicators if any
+
+Respond in JSON with:
+{
+  "relevance": "high|medium|low",
+  "supports_complaint": true|false,
+  "key_findings": ["finding1", "finding2"],
+  "new_information": ["info1", "info2"],
+  "severity_indicators": ["indicator1"],
+  "reasoning": "Brief explanation",
+  "confidence": 0.0-1.0
+}
+`;
+
+    return this.runPipeline(SYSTEM_PROMPTS.COMPLAINT_ANALYST, prompt, 'evidence_analysis');
+  }
+
   // ---- Embeddings ----
 
   async generateEmbedding(text: string): Promise<AiEmbeddingResult> {

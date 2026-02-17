@@ -12,6 +12,7 @@ import { systemicRoutes } from './systemic.routes';
 import { communicationRoutes } from './communication.routes';
 import { settingsRoutes } from './settings.routes';
 import { templatesRoutes } from './settings.templates';
+import { evidenceRoutes } from './evidence.routes';
 import { authRoutes } from './auth.routes';
 
 export const apiRouter = Router();
@@ -29,3 +30,4 @@ apiRouter.use('/systemic', systemicRoutes);
 apiRouter.use('/communications', communicationRoutes);
 apiRouter.use('/settings', settingsRoutes);
 apiRouter.use('/settings/templates', templatesRoutes);
+apiRouter.use('/evidence', evidenceRoutes);
