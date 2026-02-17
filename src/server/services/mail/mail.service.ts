@@ -69,7 +69,7 @@ class MailService {
 
     try {
       const info = await this.transporter.sendMail({
-        from: options.from || `noreply@${config.SMTP_HOST?.split('.').slice(-2).join('.')}`,
+        from: options.from || config.SMTP_FROM,
         to: options.to,
         subject: options.subject,
         html: options.html,

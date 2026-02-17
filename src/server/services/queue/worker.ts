@@ -36,9 +36,11 @@ export interface SlaCheckJobData {
 
 export interface EmailSendJobData {
   communicationId: string;
+  tenantId: string;
   to: string;
   subject: string;
   body: string;
+  communicationType: 'email_to_complainant' | 'email_to_business';
 }
 
 // ---- Queue Names ----

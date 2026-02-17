@@ -36,6 +36,7 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default('noreply@complaints.gov.au'),
   IMAP_HOST: z.string().optional(),
   IMAP_PORT: z.coerce.number().default(993),
   IMAP_USER: z.string().optional(),
