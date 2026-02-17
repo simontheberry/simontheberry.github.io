@@ -14,6 +14,7 @@ import { settingsRoutes } from './settings.routes';
 import { templatesRoutes } from './settings.templates';
 import { evidenceRoutes } from './evidence.routes';
 import { complianceRoutes } from './compliance.routes';
+import { notesRoutes } from './notes.routes';
 import { authRoutes } from './auth.routes';
 
 export const apiRouter = Router();
@@ -33,3 +34,4 @@ apiRouter.use('/settings', settingsRoutes);
 apiRouter.use('/settings/templates', templatesRoutes);
 apiRouter.use('/evidence', evidenceRoutes);
 apiRouter.use('/compliance', complianceRoutes);
+apiRouter.use('/notes', notesRoutes);
