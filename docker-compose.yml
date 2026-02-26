@@ -1,5 +1,12 @@
 # ============================================================================
-# Docker Compose – Development Environment
+# Docker Compose -- Development & Staging Environment
+# ============================================================================
+#
+# Usage:
+#   docker compose up -d postgres redis   # Infrastructure only (for local dev)
+#   docker compose up -d                  # Full stack (app + worker + infra)
+#   docker compose --profile seed up      # Run with database seeding
+#
 # ============================================================================
 
 services:
@@ -49,12 +56,25 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_MODEL: ${AI_MODEL:-gpt-4o}
       CLIENT_URL: http://localhost:3000
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@complaints.gov.au}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
 
   # Background worker (separate process)
   worker:
@@ -69,11 +89,33 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_MODEL: ${AI_MODEL:-gpt-4o}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@complaints.gov.au}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Database seeding (run once, then exits)
+  seed:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    command: ["npx", "tsx", "src/server/db/seeds/index.ts"]
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/complaint_triage
+    depends_on:
+      app:
+        condition: service_healthy
+    profiles:
+      - seed
 
 volumes:
   pgdata:
