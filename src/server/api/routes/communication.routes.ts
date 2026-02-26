@@ -11,7 +11,8 @@ import { writeAuditLog } from '../../db/audit';
 import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
 import { getAiService } from '../../services/ai/ai-service';
-import { getMailService } from '../../services/mail/mail.service';
+import { getEmailQueue, QUEUES } from '../../services/queue/worker';
+import type { EmailSendJobData } from '../../services/queue/worker';
 
 const logger = createLogger('communication-routes');
 
@@ -198,27 +199,32 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     },
   });
 
-  let emailSent = false;
-  let emailError: string | null = null;
+  let emailQueued = false;
 
-  // Attempt to send email if we have a recipient
+  // Queue email delivery if we have a recipient and it's an outbound email type
   if (recipientEmail && (communication.type === 'email_to_complainant' || communication.type === 'email_to_business')) {
-    const mailService = getMailService();
-    const result = await mailService.sendCommunication(
-      recipientEmail,
-      communication.subject || 'Communication from Regulatory Authority',
-      communication.body,
-      communication.type as 'email_to_complainant' | 'email_to_business',
-    );
-
-    emailSent = result.success;
-    emailError = result.error || null;
-
-    if (!result.success) {
-      logger.warn('Email sending failed', {
+    const queue = getEmailQueue();
+    if (queue) {
+      await queue.add(
+        QUEUES.EMAIL_SEND,
+        {
+          communicationId: body.communicationId,
+          tenantId,
+          to: recipientEmail,
+          subject: communication.subject || 'Communication from Regulatory Authority',
+          body: communication.body,
+          communicationType: communication.type,
+        } satisfies EmailSendJobData,
+        {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 5000 },
+        },
+      );
+      emailQueued = true;
+    } else {
+      logger.warn('Email queue not available, email will not be delivered', {
         communicationId: body.communicationId,
         recipientEmail,
-        error: result.error,
       });
     }
   }
@@ -227,12 +233,11 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     data: {
       complaintId: communication.complaintId,
       eventType: 'communication',
-      description: `Communication sent (${communication.type})${emailSent ? ' - email delivered' : emailError ? ` - email failed: ${emailError}` : ''}`,
+      description: `Communication approved (${communication.type})${emailQueued ? ' - email queued for delivery' : ''}`,
       metadata: {
         communicationId: body.communicationId,
         approvedBy: userId,
-        emailSent,
-        emailError,
+        emailQueued,
         recipientEmail: recipientEmail || undefined,
       },
       createdBy: userId,
@@ -242,21 +247,21 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
   await writeAuditLog({
     tenantId,
     userId,
-    action: 'communication.sent',
+    action: 'communication.approved',
     entity: 'Communication',
     entityId: body.communicationId,
     newValues: {
       approvedBy: userId,
       sentAt: now.toISOString(),
-      emailSent,
-      emailError,
+      emailQueued,
+      recipientEmail,
     },
   });
 
-  logger.info('Communication sent', {
+  logger.info('Communication approved', {
     communicationId: body.communicationId,
     userId,
-    emailSent,
+    emailQueued,
     recipientEmail,
   });
 
@@ -265,8 +270,7 @@ communicationRoutes.post('/send', authorize('complaint_officer', 'supervisor', '
     data: {
       communicationId: body.communicationId,
       sentAt: now.toISOString(),
-      emailSent,
-      emailError,
+      emailQueued,
     },
   });
 });

@@ -12,6 +12,8 @@ import { config } from '../../config';
 import { TriageEngine } from '../triage/triage-engine';
 import { SystemicDetectionEngine } from '../systemic/detection-engine';
 import { Line1Handler } from '../communications/line1-handler';
+import { getMailService } from '../mail/mail.service';
+import { cacheGet, cacheSet, CACHE_KEYS, CACHE_TTL } from '../cache/redis-cache';
 
 const logger = createLogger('queue-worker');
 
@@ -58,6 +60,7 @@ export const QUEUES = {
 let triageQueue: Queue | null = null;
 let systemicQueue: Queue | null = null;
 let slaQueue: Queue | null = null;
+let emailQueue: Queue | null = null;
 
 export function getTriageQueue(): Queue | null {
   return triageQueue;
@@ -69,6 +72,10 @@ export function getSystemicQueue(): Queue | null {
 
 export function getSlaQueue(): Queue | null {
   return slaQueue;
+}
+
+export function getEmailQueue(): Queue | null {
+  return emailQueue;
 }
 
 // ---- Worker Processors ----
@@ -103,12 +110,18 @@ async function processTriageJob(data: TriageJobData): Promise<void> {
     }
   }
 
-  // Load tenant priority weights if configured
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: data.tenantId },
-    select: { settings: true },
-  });
-  const tenantSettings = tenant?.settings as Record<string, unknown> | null;
+  // Load tenant settings (with cache)
+  let tenantSettings = await cacheGet<Record<string, unknown>>(CACHE_KEYS.tenantSettings(data.tenantId));
+  if (!tenantSettings) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: data.tenantId },
+      select: { settings: true },
+    });
+    tenantSettings = (tenant?.settings as Record<string, unknown>) ?? null;
+    if (tenantSettings) {
+      await cacheSet(CACHE_KEYS.tenantSettings(data.tenantId), tenantSettings, CACHE_TTL.TENANT_SETTINGS);
+    }
+  }
   const priorityWeights = tenantSettings?.priorityWeights as Record<string, number> | undefined;
 
   // Run triage engine
@@ -462,6 +475,67 @@ async function processSlaCheck(data: SlaCheckJobData): Promise<void> {
   });
 }
 
+/**
+ * Email send processor.
+ *
+ * 1. Send email via mail service
+ * 2. Update communication record with result (messageId or error)
+ * 3. Audit log success/failure
+ */
+async function processEmailSend(data: EmailSendJobData): Promise<void> {
+  logger.info(`Processing email send for communication ${data.communicationId}`);
+
+  const mailService = getMailService();
+  const result = await mailService.sendCommunication(
+    data.to,
+    data.subject,
+    data.body,
+    data.communicationType,
+  );
+
+  if (result.success) {
+    await prisma.communication.update({
+      where: { id: data.communicationId },
+      data: {
+        recipients: {
+          email: data.to,
+          messageId: result.messageId,
+          deliveredAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    logger.info('Email delivered successfully', {
+      communicationId: data.communicationId,
+      messageId: result.messageId,
+      to: data.to,
+    });
+  } else {
+    logger.error('Email delivery failed', {
+      communicationId: data.communicationId,
+      to: data.to,
+      error: result.error,
+    });
+  }
+
+  await writeAuditLog({
+    tenantId: data.tenantId,
+    action: result.success ? 'email.delivered' : 'email.failed',
+    entity: 'Communication',
+    entityId: data.communicationId,
+    newValues: {
+      to: data.to,
+      success: result.success,
+      messageId: result.messageId,
+      error: result.error,
+    },
+  });
+
+  if (!result.success) {
+    throw new Error(`Email delivery failed: ${result.error}`);
+  }
+}
+
 // ---- Worker Bootstrap ----
 
 /**
@@ -479,6 +553,7 @@ export async function startWorkers(): Promise<void> {
   triageQueue = new Queue(QUEUES.COMPLAINT_TRIAGE, { connection });
   systemicQueue = new Queue(QUEUES.SYSTEMIC_DETECTION, { connection });
   slaQueue = new Queue(QUEUES.SLA_MONITOR, { connection });
+  emailQueue = new Queue(QUEUES.EMAIL_SEND, { connection });
 
   // Triage worker
   const triageWorker = new Worker(
@@ -534,6 +609,24 @@ export async function startWorkers(): Promise<void> {
     { connection, concurrency: 1 },
   );
 
+  // Email send worker
+  const emailWorker = new Worker(
+    QUEUES.EMAIL_SEND,
+    async (job) => {
+      try {
+        await processEmailSend(job.data as EmailSendJobData);
+      } catch (err) {
+        logger.error('Email send job failed', {
+          jobId: job.id,
+          communicationId: (job.data as EmailSendJobData).communicationId,
+          error: (err as Error).message,
+        });
+        throw err;
+      }
+    },
+    { connection, concurrency: 3 },
+  );
+
   // Schedule hourly SLA checks for all active tenants
   const tenants = await prisma.tenant.findMany({
     where: { isActive: true },
@@ -552,7 +645,7 @@ export async function startWorkers(): Promise<void> {
   }
 
   // Log worker events
-  for (const worker of [triageWorker, systemicWorker, slaWorker]) {
+  for (const worker of [triageWorker, systemicWorker, slaWorker, emailWorker]) {
     worker.on('completed', (job) => {
       logger.debug(`Job ${job.id} completed on ${worker.name}`);
     });
