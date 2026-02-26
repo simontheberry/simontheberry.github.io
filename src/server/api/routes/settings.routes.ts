@@ -10,6 +10,7 @@ import { prisma } from '../../db/client';
 import { writeAuditLog } from '../../db/audit';
 import { createLogger } from '../../utils/logger';
 import { Prisma } from '@prisma/client';
+import { cacheGet, cacheSet, cacheDel, CACHE_KEYS, CACHE_TTL } from '../../services/cache/redis-cache';
 
 const logger = createLogger('settings-routes');
 
@@ -82,6 +83,14 @@ const DEFAULT_SETTINGS = {
 // GET /api/v1/settings -- Fetch current tenant settings
 settingsRoutes.get('/', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
+  const cacheKey = CACHE_KEYS.tenantSettings(tenantId);
+
+  // Check cache first
+  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+  if (cached) {
+    res.json({ success: true, data: cached });
+    return;
+  }
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -107,6 +116,8 @@ settingsRoutes.get('/', async (req: Request, res: Response) => {
       ...((storedSettings.features as Record<string, unknown>) ?? {}),
     },
   };
+
+  await cacheSet(cacheKey, settings, CACHE_TTL.TENANT_SETTINGS);
 
   res.json({ success: true, data: settings });
 });
@@ -196,6 +207,9 @@ settingsRoutes.patch(
       newValues: body as Record<string, unknown>,
     });
 
+    // Invalidate cached settings
+    await cacheDel(CACHE_KEYS.tenantSettings(tenantId));
+
     logger.info('Tenant settings updated', { tenantId, userId });
 
     res.json({ success: true, data: merged });
@@ -231,6 +245,9 @@ settingsRoutes.post(
       oldValues: oldSettings,
       newValues: DEFAULT_SETTINGS as unknown as Record<string, unknown>,
     });
+
+    // Invalidate cached settings
+    await cacheDel(CACHE_KEYS.tenantSettings(tenantId));
 
     logger.info('Tenant settings reset to defaults', { tenantId, userId });
 

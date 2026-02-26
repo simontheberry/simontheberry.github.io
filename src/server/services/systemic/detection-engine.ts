@@ -110,14 +110,19 @@ export class SystemicDetectionEngine {
   async findSimilarComplaints(
     complaintId: string,
     tenantId: string,
-    complaintText: string,
+    complaintTextOrEmbedding: string | number[],
     limit = 20,
   ): Promise<SimilarComplaint[]> {
     logger.info(`Finding similar complaints for ${complaintId}`);
 
-    // Generate embedding for the query complaint
-    const embeddingResult = await this.aiService.generateEmbedding(complaintText);
-    const vectorStr = `[${embeddingResult.embedding.join(',')}]`;
+    // Accept pre-computed embedding to avoid duplicate API calls
+    let vectorStr: string;
+    if (Array.isArray(complaintTextOrEmbedding)) {
+      vectorStr = `[${complaintTextOrEmbedding.join(',')}]`;
+    } else {
+      const embeddingResult = await this.aiService.generateEmbedding(complaintTextOrEmbedding);
+      vectorStr = `[${embeddingResult.embedding.join(',')}]`;
+    }
 
     // Execute pgvector similarity search with tenant isolation
     const results = await prisma.$queryRaw<Array<{
@@ -285,19 +290,24 @@ export class SystemicDetectionEngine {
     spikes: SpikeAnomaly[];
   }> {
     // Step 1: Generate and store embedding
+    let cachedEmbedding: number[] | null = null;
     try {
       const embeddingResult = await this.aiService.generateEmbedding(complaintText);
+      cachedEmbedding = embeddingResult.embedding;
       await this.storeEmbedding(complaintId, tenantId, embeddingResult.embedding, embeddingResult.model);
       logger.info(`Embedding stored for complaint ${complaintId}`, { model: embeddingResult.model });
     } catch (error) {
       logger.error('Failed to generate/store embedding', { complaintId, error: (error as Error).message });
-      // Continue without embedding -- similarity search will use a fresh embedding call
     }
 
-    // Step 2: Find similar complaints via pgvector
+    // Step 2: Find similar complaints via pgvector (reuse embedding from step 1)
     let similarComplaints: SimilarComplaint[] = [];
     try {
-      similarComplaints = await this.findSimilarComplaints(complaintId, tenantId, complaintText);
+      similarComplaints = await this.findSimilarComplaints(
+        complaintId,
+        tenantId,
+        cachedEmbedding || complaintText,
+      );
       logger.info(`Found ${similarComplaints.length} similar complaints`, { complaintId });
     } catch (error) {
       logger.error('Similarity search failed', { complaintId, error: (error as Error).message });

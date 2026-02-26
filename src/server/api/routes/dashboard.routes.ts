@@ -6,6 +6,7 @@ import { Router, Request, Response } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { requireTenant } from '../middleware/tenant-resolver';
 import { prisma } from '../../db/client';
+import { cacheGet, cacheSet, CACHE_KEYS, CACHE_TTL } from '../../services/cache/redis-cache';
 
 export const dashboardRoutes = Router();
 
@@ -15,6 +16,14 @@ dashboardRoutes.use(requireTenant);
 // GET /api/v1/dashboard/stats -- Overview statistics (all authenticated users)
 dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
+
+  // Check cache first (30s TTL reduces load on frequent dashboard refreshes)
+  const cacheKey = CACHE_KEYS.dashboardStats(tenantId);
+  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+  if (cached) {
+    res.json({ success: true, data: cached });
+    return;
+  }
 
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -97,21 +106,22 @@ dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
     avgResolutionDays = Math.round((totalDays / resolvedComplaints.length) * 10) / 10;
   }
 
-  res.json({
-    success: true,
-    data: {
-      totalComplaints,
-      openComplaints,
-      criticalComplaints,
-      avgResolutionDays,
-      complaintsToday,
-      systemicAlerts,
-      pendingTriage,
-      slaBreaches,
-      slaApproaching,
-      slaComplianceRate,
-    },
-  });
+  const statsData = {
+    totalComplaints,
+    openComplaints,
+    criticalComplaints,
+    avgResolutionDays,
+    complaintsToday,
+    systemicAlerts,
+    pendingTriage,
+    slaBreaches,
+    slaApproaching,
+    slaComplianceRate,
+  };
+
+  await cacheSet(cacheKey, statsData, CACHE_TTL.DASHBOARD_STATS);
+
+  res.json({ success: true, data: statsData });
 });
 
 // GET /api/v1/dashboard/officer -- Complaint officer personal queue

@@ -351,6 +351,7 @@ model CommunicationTemplate {
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
+  @@index([tenantId, isActive])
   @@map("communication_templates")
 }
 
