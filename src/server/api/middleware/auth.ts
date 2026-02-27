@@ -30,7 +30,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
 
 export function authorize(...roles: UserRole[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.userRole || !roles.includes(req.userRole as UserRole)) {
+    if (!req.userRole || (req.userRole !== 'admin' && !roles.includes(req.userRole as UserRole))) {
       throw new AppError(403, 'FORBIDDEN', 'Insufficient permissions');
     }
     next();

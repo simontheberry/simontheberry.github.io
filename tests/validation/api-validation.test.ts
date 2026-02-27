@@ -32,7 +32,7 @@ describe('API Input Validation with Zod', () => {
 
     it('rejects too short complaint text', () => {
       const payload = {
-        rawText: 'Bad product',
+        rawText: 'Too short',
         channel: 'portal',
         complainantFirstName: 'John',
         complainantLastName: 'Doe',

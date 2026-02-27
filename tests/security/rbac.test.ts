@@ -16,7 +16,7 @@ describe('RBAC Authorization', () => {
     // Protected admin endpoint
     app.get(
       '/api/protected/admin',
-      authorize(['admin']),
+      authorize('admin'),
       (req, res) => {
         res.json({ success: true });
       },
@@ -25,7 +25,7 @@ describe('RBAC Authorization', () => {
     // Protected supervisor endpoint
     app.patch(
       '/api/protected/update',
-      authorize(['supervisor', 'admin']),
+      authorize('supervisor', 'admin'),
       (req, res) => {
         res.json({ success: true });
       },
@@ -45,12 +45,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = adminUser;
+        req.userRole = adminUser.role;
         next();
       });
 
       app2.get(
         '/api/protected/admin',
-        authorize(['admin']),
+        authorize('admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -70,12 +71,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = adminUser;
+        req.userRole = adminUser.role;
         next();
       });
 
       app2.patch(
         '/api/protected/update',
-        authorize(['supervisor']),
+        authorize('supervisor'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -99,12 +101,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = supervisorUser;
+        req.userRole = supervisorUser.role;
         next();
       });
 
       app2.patch(
         '/api/protected/update',
-        authorize(['supervisor', 'admin']),
+        authorize('supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -126,12 +129,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = supervisorUser;
+        req.userRole = supervisorUser.role;
         next();
       });
 
       app2.get(
         '/api/protected/admin',
-        authorize(['admin']),
+        authorize('admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -159,12 +163,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = officerUser;
+        req.userRole = officerUser.role;
         next();
       });
 
       app2.get(
         '/api/protected/read',
-        authorize(['complaint_officer', 'supervisor', 'admin']),
+        authorize('complaint_officer', 'supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -186,12 +191,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = officerUser;
+        req.userRole = officerUser.role;
         next();
       });
 
       app2.post(
         '/api/protected/escalate',
-        authorize(['supervisor', 'admin']),
+        authorize('supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -219,13 +225,14 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = executiveUser;
+        req.userRole = executiveUser.role;
         next();
       });
 
       // Read endpoint
       app2.get(
         '/api/dashboard/stats',
-        authorize(['executive', 'supervisor', 'admin']),
+        authorize('executive', 'supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -234,7 +241,7 @@ describe('RBAC Authorization', () => {
       // Write endpoint
       app2.patch(
         '/api/complaint/update',
-        authorize(['supervisor', 'admin']),
+        authorize('supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },
@@ -268,12 +275,13 @@ describe('RBAC Authorization', () => {
       app2.use(express.json());
       app2.use((req: any, res, next) => {
         req.user = officerUser;
+        req.userRole = officerUser.role;
         next();
       });
 
       app2.delete(
         '/api/evidence/:id',
-        authorize(['supervisor', 'admin']),
+        authorize('supervisor', 'admin'),
         (req, res) => {
           res.json({ success: true });
         },

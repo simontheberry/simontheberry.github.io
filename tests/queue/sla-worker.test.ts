@@ -45,10 +45,13 @@ describe('SLA Queue Worker', () => {
       },
     });
 
+    // For the first complaint: submittedAt = 73 hours ago, slaDeadline = submittedAt + 48h = 25 hours ago (overdue)
+    const submittedAt1 = new Date(Date.now() - 73 * 60 * 60 * 1000);
     mockComplaints = [
       createTestComplaint(mockTenant.id, {
         status: 'triaged',
-        slaDeadline: new Date(Date.now() - 25 * 60 * 60 * 1000), // 25 hours ago (overdue line 1)
+        submittedAt: submittedAt1,
+        slaDeadline: new Date(submittedAt1.getTime() + 48 * 60 * 60 * 1000), // submittedAt + 48h = 25 hours ago
         riskLevel: 'high',
       }),
       createTestComplaint(mockTenant.id, {

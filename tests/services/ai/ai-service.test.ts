@@ -57,7 +57,17 @@ function createMockProvider(): AiProvider {
           isSystemicRisk: false,
           breachLikelihood: 0.7,
         };
-      } else if (systemPrompt.includes('risk') || systemPrompt.includes('Risk')) {
+      } else if (userPrompt.includes('Evidence Document') || userPrompt.includes('analyzing supporting evidence')) {
+        content = {
+          confidence: 0.8,
+          reasoning: 'Analyzed evidence relevance.',
+          relevance: 'high',
+          supports_complaint: true,
+          key_findings: ['Document supports the claimed transaction'],
+          new_information: [],
+          severity_indicators: [],
+        };
+      } else if (systemPrompt.includes('risk assessment') || systemPrompt.includes('Risk')) {
         const isHighValue = userPrompt.includes('50000') || userPrompt.includes('5000');
         const isVulnerable = userPrompt.includes('vulnerable') || userPrompt.includes('Vulnerable');
         let riskScore = 0.5;
@@ -71,37 +81,32 @@ function createMockProvider(): AiProvider {
           vulnerabilityIndicator: isVulnerable ? 0.8 : 0.2,
           systemicImpact: 0.3,
         };
-      } else if (systemPrompt.includes('missing') || systemPrompt.includes('Missing')) {
+      } else if (systemPrompt.includes('missing') || systemPrompt.includes('Missing') || systemPrompt.includes('intake')) {
         content = {
           confidence: 0.75,
           reasoning: 'Identified data gaps in complaint.',
           missingFields: ['date_of_incident', 'receipt_number'],
           followUpQuestions: ['When did this happen?', 'Do you have a receipt?'],
         };
-      } else if (systemPrompt.includes('complainant') || systemPrompt.includes('acknowledgment')) {
-        content = {
-          confidence: 0.9,
-          reasoning: 'Drafted professional response.',
-          subject: 'Acknowledgment of Your Complaint',
-          body: 'Dear Complainant,\n\nWe have received your complaint and acknowledge the issues you have raised.',
-        };
-      } else if (systemPrompt.includes('business') || systemPrompt.includes('notice') || systemPrompt.includes('Notice')) {
-        const businessName = userPrompt.match(/"businessName":\s*"([^"]+)"/)?.[1] ||
-          userPrompt.match(/business[:\s]+(\w[\w\s]+)/i)?.[1]?.trim() || 'Company XYZ';
-        content = {
-          confidence: 0.87,
-          reasoning: 'Drafted formal regulatory notification.',
-          subject: `Notification of Complaint - ${businessName}`,
-          body: `Dear ${businessName},\n\nThis is a formal notification that a complaint has been received.`,
-        };
-      } else if (systemPrompt.includes('evidence') || systemPrompt.includes('Evidence')) {
-        content = {
-          confidence: 0.8,
-          reasoning: 'Analyzed evidence relevance.',
-          relevance: 'high',
-          supports_complaint: true,
-          key_findings: ['Document supports the claimed transaction'],
-        };
+      } else if (systemPrompt.includes('correspondence') || systemPrompt.includes('Correspondence') || systemPrompt.includes('communications')) {
+        // Differentiate complainant response vs business notice by user prompt
+        if (userPrompt.includes('BUSINESS NAME') || userPrompt.includes('business notice') || userPrompt.includes('regulatory notice')) {
+          const businessName = userPrompt.match(/BUSINESS NAME:\s*(.+)/)?.[1]?.trim() ||
+            userPrompt.match(/Business Name[:\s]+([^\n,}]+)/)?.[1]?.trim() || 'Company XYZ';
+          content = {
+            confidence: 0.87,
+            reasoning: 'Drafted formal regulatory notification.',
+            subject: `Notification of Complaint - ${businessName}`,
+            body: `Dear ${businessName},\n\nThis is a formal notification that a complaint has been received regarding your business practices. You are required to respond within 14 business days.`,
+          };
+        } else {
+          content = {
+            confidence: 0.9,
+            reasoning: 'Drafted professional response.',
+            subject: 'Acknowledgment of Your Complaint',
+            body: 'Dear Complainant,\n\nWe have received your complaint and acknowledge the issues you have raised.',
+          };
+        }
       } else if (systemPrompt.includes('cluster') || systemPrompt.includes('systemic')) {
         content = {
           confidence: 0.87,
