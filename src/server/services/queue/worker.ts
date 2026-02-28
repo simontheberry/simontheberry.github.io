@@ -550,10 +550,10 @@ export async function startWorkers(): Promise<void> {
   });
 
   // Create queues for enqueuing jobs from routes
-  triageQueue = new Queue(QUEUES.COMPLAINT_TRIAGE, { connection });
-  systemicQueue = new Queue(QUEUES.SYSTEMIC_DETECTION, { connection });
-  slaQueue = new Queue(QUEUES.SLA_MONITOR, { connection });
-  emailQueue = new Queue(QUEUES.EMAIL_SEND, { connection });
+  triageQueue = new Queue(QUEUES.COMPLAINT_TRIAGE, { connection: connection as any });
+  systemicQueue = new Queue(QUEUES.SYSTEMIC_DETECTION, { connection: connection as any });
+  slaQueue = new Queue(QUEUES.SLA_MONITOR, { connection: connection as any });
+  emailQueue = new Queue(QUEUES.EMAIL_SEND, { connection: connection as any });
 
   // Triage worker
   const triageWorker = new Worker(
@@ -570,7 +570,7 @@ export async function startWorkers(): Promise<void> {
         throw err;
       }
     },
-    { connection, concurrency: 5 },
+    { connection: connection as any, concurrency: 5 },
   );
 
   // Systemic detection worker
@@ -588,7 +588,7 @@ export async function startWorkers(): Promise<void> {
         throw err;
       }
     },
-    { connection, concurrency: 3 },
+    { connection: connection as any, concurrency: 3 },
   );
 
   // SLA monitor worker
@@ -606,7 +606,7 @@ export async function startWorkers(): Promise<void> {
         throw err;
       }
     },
-    { connection, concurrency: 1 },
+    { connection: connection as any, concurrency: 1 },
   );
 
   // Email send worker
@@ -624,7 +624,7 @@ export async function startWorkers(): Promise<void> {
         throw err;
       }
     },
-    { connection, concurrency: 3 },
+    { connection: connection as any, concurrency: 3 },
   );
 
   // Schedule hourly SLA checks for all active tenants
