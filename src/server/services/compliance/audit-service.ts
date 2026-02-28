@@ -299,7 +299,7 @@ class AuditService {
 
     return {
       archivedCount: archivedCount.count,
-      deletedCount,
+      deletedCount: deletedCount.count,
     };
   }
 

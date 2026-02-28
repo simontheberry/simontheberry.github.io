@@ -176,7 +176,7 @@ async function processTriageJob(data: TriageJobData): Promise<void> {
         model: output.model,
         prompt: output.prompt,
         rawOutput: output.rawOutput,
-        parsedOutput: output.parsedOutput as Record<string, unknown>,
+        parsedOutput: output.parsedOutput as any,
         confidence: output.confidence,
         reasoning: output.reasoning,
         tokenUsage: output.tokenUsage,

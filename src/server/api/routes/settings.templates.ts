@@ -150,7 +150,7 @@ templatesRoutes.patch(
         type: body.type ?? template.type,
         subject: body.subject ?? template.subject,
         body: body.body ?? template.body,
-        variables: body.variables ?? template.variables,
+        variables: body.variables ?? (template.variables as any) ?? {},
         isActive: body.isActive ?? template.isActive,
       },
     });

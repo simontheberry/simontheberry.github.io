@@ -232,7 +232,6 @@ triageRoutes.get('/sla/breaches', authorize('complaint_officer', 'supervisor', '
       assignedToId: true,
       routingDestination: true,
       slaDeadline: true,
-      complaintCount: false,
       category: true,
       riskLevel: true,
       createdAt: true,

@@ -128,7 +128,7 @@ evidenceRoutes.post(
                   model: record.model,
                   prompt: record.prompt,
                   rawOutput: record.rawOutput,
-                  parsedOutput: analysis as Record<string, unknown>,
+                  parsedOutput: analysis as any,
                   confidence: (analysis as Record<string, unknown>).confidence as number,
                   reasoning: (analysis as Record<string, unknown>).reasoning as string,
                   tokenUsage: record.tokenUsage,

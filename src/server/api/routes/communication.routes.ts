@@ -94,7 +94,7 @@ communicationRoutes.post('/draft', async (req: Request, res: Response) => {
         model: aiOutputRecord.model,
         prompt: aiOutputRecord.prompt,
         rawOutput: aiOutputRecord.rawOutput,
-        parsedOutput: aiOutputRecord.parsedOutput as Record<string, unknown>,
+        parsedOutput: aiOutputRecord.parsedOutput as any,
         confidence: aiOutputRecord.confidence,
         reasoning: aiOutputRecord.reasoning,
         tokenUsage: aiOutputRecord.tokenUsage,
