@@ -8,7 +8,7 @@ import { createLogger } from '../../utils/logger';
 
 const logger = createLogger('redis-cache');
 
-let redis: IORedis | null = null;
+let redis: any = null;
 let isConnected = false;
 
 function getRedis(): IORedis | null {
@@ -26,7 +26,7 @@ function getRedis(): IORedis | null {
       logger.info('Redis cache connected');
     });
 
-    redis.on('error', (err) => {
+    redis.on('error', (err: any) => {
       isConnected = false;
       logger.warn('Redis cache connection error', { error: err.message });
     });
