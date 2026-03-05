@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { authenticate, authorize } from '../middleware/auth';
 import { requireTenant } from '../middleware/tenant-resolver';
 import { createLogger } from '../../utils/logger';
+import { TransitionManager } from '../services/state-machine/transition-manager';
+import { ComplaintStateMachine, type ComplaintStatus } from '../services/state-machine/complaint-state-machine';
 
 const logger = createLogger('complaint-routes');
 
@@ -41,6 +43,12 @@ const assignSchema = z.object({
 const escalateSchema = z.object({
   reason: z.string().min(10),
   destination: z.enum(['line_2_investigation', 'systemic_review']),
+});
+
+const stateTransitionSchema = z.object({
+  toStatus: z.string(),
+  reason: z.string().min(1).max(500),
+  metadata: z.record(z.unknown()).optional(),
 });
 
 const updateComplaintSchema = z.object({
@@ -249,6 +257,78 @@ complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
     }
     return res.status(500).json({ success: false, error: { message: 'Escalation failed' } });
   }
+});
+
+// POST /api/v1/complaints/:id/transition – State machine transition
+complaintRoutes.post('/:id/transition', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.tenantId!;
+
+  try {
+    const body = stateTransitionSchema.parse(req.body);
+
+    // Execute state transition with audit trail
+    const result = await TransitionManager.executeTransition(
+      id,
+      body.toStatus as ComplaintStatus,
+      {
+        userId: req.userId!,
+        userRole: req.userRole || 'system',
+        complaintId: id,
+        reason: body.reason,
+        metadata: body.metadata,
+      },
+      tenantId
+    );
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: { message: result.error || 'Transition failed' },
+      });
+    }
+
+    logger.info('Complaint state transitioned', {
+      complaintId: id,
+      from: result.previousStatus,
+      to: result.newStatus,
+      userId: req.userId,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        complaintId: id,
+        previousStatus: result.previousStatus,
+        newStatus: result.newStatus,
+        transitionedAt: new Date().toISOString(),
+        transitionedBy: req.userId,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: error.errors },
+      });
+    }
+    logger.error('State transition failed', { complaintId: id, error: error instanceof Error ? error.message : 'Unknown error' });
+    return res.status(500).json({ success: false, error: { message: 'Transition failed' } });
+  }
+});
+
+// GET /api/v1/complaints/:id/available-transitions – Get available state transitions
+complaintRoutes.get('/:id/available-transitions', async (req: Request, res: Response) => {
+  // In production: fetch current complaint status and filter available transitions
+  // For now, return all possible transitions (UI can filter based on user role)
+  const userRole = req.userRole || 'system';
+
+  const transitions = TransitionManager.getAvailableTransitions('submitted', userRole);
+
+  res.json({
+    success: true,
+    data: transitions,
+  });
 });
 
 // GET /api/v1/complaints/:id/timeline – Get complaint event timeline
