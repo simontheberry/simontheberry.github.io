@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Sparkles, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { AiGuidancePanel } from './AiGuidancePanel';
 
 interface AiGuidance {
@@ -23,13 +23,11 @@ export function ComplaintTextInput({ value, onChange, onAiExtraction, onNext }: 
   const [guidance, setGuidance] = useState<AiGuidance | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [hasAnalyzed, setHasAnalyzed] = useState(false);
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   const analyzeText = useCallback(async () => {
     if (value.length < 20) return;
 
     setIsAnalyzing(true);
-    setAnalyzeError(null);
     try {
       const response = await fetch('/api/v1/intake/ai-guidance', {
         method: 'POST',
@@ -37,33 +35,18 @@ export function ComplaintTextInput({ value, onChange, onAiExtraction, onNext }: 
         body: JSON.stringify({ tenantSlug: 'default', text: value }),
       });
 
-      if (!response.ok) {
-        if (response.status === 429) {
-          setAnalyzeError('Too many requests. Please wait a moment and try again.');
-          return;
-        }
-        setAnalyzeError('Analysis is temporarily unavailable. You can continue without it.');
-        return;
-      }
-
       const data = await response.json();
       if (data.success) {
         setGuidance(data.data);
-        onAiExtraction(data.data.extractedData ?? {});
+        onAiExtraction(data.data.extractedData);
         setHasAnalyzed(true);
-      } else {
-        setAnalyzeError(data.error?.message ?? 'Analysis failed. You can continue without it.');
       }
-    } catch {
-      setAnalyzeError('Could not connect to the analysis service. You can continue without it.');
+    } catch (error) {
+      console.error('AI guidance failed:', error);
     } finally {
       setIsAnalyzing(false);
     }
   }, [value, onAiExtraction]);
-
-  function handleAcceptField(field: string, value: unknown) {
-    onAiExtraction({ [field]: value });
-  }
 
   return (
     <div>
@@ -106,29 +89,8 @@ export function ComplaintTextInput({ value, onChange, onAiExtraction, onNext }: 
         </div>
       </div>
 
-      {/* Error state */}
-      {analyzeError && (
-        <div className="mt-4 flex items-start gap-2 rounded-md border border-yellow-200 bg-yellow-50 p-3">
-          <AlertCircle className="h-4 w-4 text-yellow-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm text-yellow-800">{analyzeError}</p>
-            <button
-              onClick={analyzeText}
-              className="mt-1 text-xs text-yellow-700 underline hover:text-yellow-900"
-            >
-              Try again
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* AI Guidance Panel */}
-      {guidance && (
-        <AiGuidancePanel
-          guidance={guidance}
-          onAcceptField={handleAcceptField}
-        />
-      )}
+      {guidance && <AiGuidancePanel guidance={guidance} />}
 
       {/* Navigation */}
       <div className="mt-8 flex justify-end">

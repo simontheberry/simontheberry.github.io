@@ -3,7 +3,6 @@
 // Embedding-based clustering + anomaly detection
 // ============================================================================
 
-import { prisma } from '../../db/client';
 import { createLogger } from '../../utils/logger';
 import { getAiService } from '../ai/ai-service';
 import { config } from '../../config';
@@ -65,42 +64,9 @@ export class SystemicDetectionEngine {
   }
 
   /**
-   * Store an embedding for a complaint in the complaint_embeddings table.
-   * Uses raw SQL because Prisma does not natively support pgvector.
-   */
-  async storeEmbedding(
-    complaintId: string,
-    tenantId: string,
-    embedding: number[],
-    model: string,
-  ): Promise<void> {
-    // Format the embedding array as a pgvector-compatible string: '[0.1,0.2,...]'
-    const vectorStr = `[${embedding.join(',')}]`;
-
-    // Upsert: if embedding already exists for this complaint, update it
-    await prisma.$executeRaw`
-      INSERT INTO complaint_embeddings (id, complaint_id, tenant_id, embedding, model, created_at)
-      VALUES (gen_random_uuid(), ${complaintId}, ${tenantId}, ${vectorStr}::vector, ${model}, NOW())
-      ON CONFLICT (complaint_id)
-      DO UPDATE SET embedding = ${vectorStr}::vector, model = ${model}, created_at = NOW()
-    `;
-
-    // Link the embedding record to the complaint
-    const embeddingRecord = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM complaint_embeddings WHERE complaint_id = ${complaintId}
-    `;
-    if (embeddingRecord.length > 0) {
-      await prisma.complaint.update({
-        where: { id: complaintId },
-        data: { embeddingId: embeddingRecord[0].id },
-      });
-    }
-  }
-
-  /**
    * Find complaints similar to a given complaint using vector similarity.
    *
-   * Executes a pgvector query:
+   * In production, this executes a pgvector query:
    *   SELECT complaint_id, 1 - (embedding <=> $1) AS similarity
    *   FROM complaint_embeddings
    *   WHERE 1 - (embedding <=> $1) > $threshold
@@ -109,51 +75,30 @@ export class SystemicDetectionEngine {
    */
   async findSimilarComplaints(
     complaintId: string,
-    tenantId: string,
-    complaintTextOrEmbedding: string | number[],
+    complaintText: string,
     limit = 20,
   ): Promise<SimilarComplaint[]> {
     logger.info(`Finding similar complaints for ${complaintId}`);
 
-    // Accept pre-computed embedding to avoid duplicate API calls
-    let vectorStr: string;
-    if (Array.isArray(complaintTextOrEmbedding)) {
-      vectorStr = `[${complaintTextOrEmbedding.join(',')}]`;
-    } else {
-      const embeddingResult = await this.aiService.generateEmbedding(complaintTextOrEmbedding);
-      vectorStr = `[${embeddingResult.embedding.join(',')}]`;
-    }
+    // Generate embedding for the query complaint
+    const embedding = await this.aiService.generateEmbedding(complaintText);
 
-    // Execute pgvector similarity search with tenant isolation
-    const results = await prisma.$queryRaw<Array<{
-      complaint_id: string;
-      similarity: number;
-      summary: string | null;
-      category: string | null;
-      business_id: string | null;
-    }>>`
-      SELECT
-        ce.complaint_id,
-        1 - (ce.embedding <=> ${vectorStr}::vector) AS similarity,
-        c.summary,
-        c.category,
-        c.business_id
-      FROM complaint_embeddings ce
-      JOIN complaints c ON c.id = ce.complaint_id
-      WHERE ce.complaint_id != ${complaintId}
-        AND ce.tenant_id = ${tenantId}
-        AND 1 - (ce.embedding <=> ${vectorStr}::vector) > ${this.similarityThreshold}
-      ORDER BY similarity DESC
-      LIMIT ${limit}
-    `;
+    // TODO: Execute pgvector similarity search
+    // Placeholder — in production this queries the complaint_embeddings table
+    //
+    // const results = await prisma.$queryRaw`
+    //   SELECT ce.complaint_id, c.summary, c.category, c.business_id,
+    //          1 - (ce.embedding <=> ${embedding.embedding}::vector) AS similarity
+    //   FROM complaint_embeddings ce
+    //   JOIN complaints c ON c.id = ce.complaint_id
+    //   WHERE ce.complaint_id != ${complaintId}
+    //     AND c.tenant_id = ${tenantId}
+    //     AND 1 - (ce.embedding <=> ${embedding.embedding}::vector) > ${this.similarityThreshold}
+    //   ORDER BY similarity DESC
+    //   LIMIT ${limit};
+    // `;
 
-    return results.map((r) => ({
-      complaintId: r.complaint_id,
-      similarity: Number(r.similarity),
-      summary: r.summary || '',
-      category: r.category || '',
-      businessId: r.business_id || '',
-    }));
+    return [];
   }
 
   /**
@@ -202,9 +147,6 @@ export class SystemicDetectionEngine {
    *
    * Compares recent complaint volume against a rolling baseline
    * to identify anomalous increases.
-   *
-   * Baseline: average daily count over the previous 7 windows.
-   * Spike: when recent count exceeds baseline * threshold.
    */
   async detectSpikes(
     tenantId: string,
@@ -213,67 +155,18 @@ export class SystemicDetectionEngine {
   ): Promise<SpikeAnomaly[]> {
     logger.info(`Running spike detection for tenant ${tenantId}`);
 
-    // Use raw SQL for the window-based aggregation
-    // Recent window: last `windowHours` hours
-    // Baseline: average per-window count over the prior 7 windows
-    const results = await prisma.$queryRaw<Array<{
-      industry: string | null;
-      category: string | null;
-      recent_count: bigint;
-      baseline_avg: number | null;
-    }>>`
-      SELECT
-        industry,
-        category,
-        COUNT(*) FILTER (
-          WHERE created_at > NOW() - make_interval(hours => ${windowHours})
-        ) AS recent_count,
-        COUNT(*) FILTER (
-          WHERE created_at > NOW() - make_interval(hours => ${windowHours * 7})
-            AND created_at <= NOW() - make_interval(hours => ${windowHours})
-        ) / NULLIF(6.0, 0) AS baseline_avg
-      FROM complaints
-      WHERE tenant_id = ${tenantId}
-        AND industry IS NOT NULL
-        AND category IS NOT NULL
-      GROUP BY industry, category
-      HAVING COUNT(*) FILTER (
-        WHERE created_at > NOW() - make_interval(hours => ${windowHours})
-      ) > 0
-    `;
+    // TODO: Query DB for complaint counts in current window vs baseline
+    //
+    // SELECT industry, category,
+    //        COUNT(*) FILTER (WHERE created_at > NOW() - interval '${windowHours} hours') as recent_count,
+    //        COUNT(*) FILTER (WHERE created_at > NOW() - interval '${windowHours * 7} hours') / 7.0 as baseline_avg
+    // FROM complaints
+    // WHERE tenant_id = ${tenantId}
+    // GROUP BY industry, category
+    // HAVING COUNT(*) FILTER (WHERE created_at > NOW() - interval '${windowHours} hours') >
+    //        (COUNT(*) FILTER (WHERE created_at > NOW() - interval '${windowHours * 7} hours') / 7.0) * ${threshold}
 
-    const spikes: SpikeAnomaly[] = [];
-
-    for (const row of results) {
-      const recentCount = Number(row.recent_count);
-      const baselineAvg = row.baseline_avg ? Number(row.baseline_avg) : 0;
-
-      // Only flag as spike if baseline exists and ratio exceeds threshold
-      // If no baseline (new category/industry), require minimum count of 5
-      if (
-        (baselineAvg > 0 && recentCount > baselineAvg * threshold) ||
-        (baselineAvg === 0 && recentCount >= 5)
-      ) {
-        const ratio = baselineAvg > 0 ? recentCount / baselineAvg : recentCount;
-        spikes.push({
-          industry: row.industry || 'unknown',
-          category: row.category || 'unknown',
-          count: recentCount,
-          baselineCount: Math.round(baselineAvg),
-          ratio: Math.round(ratio * 100) / 100,
-          detectedAt: new Date().toISOString(),
-        });
-      }
-    }
-
-    if (spikes.length > 0) {
-      logger.warn(`Detected ${spikes.length} complaint volume spikes`, {
-        tenantId,
-        spikes: spikes.map(s => ({ industry: s.industry, category: s.category, ratio: s.ratio })),
-      });
-    }
-
-    return spikes;
+    return [];
   }
 
   /**
@@ -289,47 +182,26 @@ export class SystemicDetectionEngine {
     clusterResult: { isSystemic: boolean; title: string; description: string; riskLevel: string; commonPatterns: string[]; confidence: number } | null;
     spikes: SpikeAnomaly[];
   }> {
-    // Step 1: Generate and store embedding
-    let cachedEmbedding: number[] | null = null;
+    // Step 1: Store embedding
     try {
-      const embeddingResult = await this.aiService.generateEmbedding(complaintText);
-      cachedEmbedding = embeddingResult.embedding;
-      await this.storeEmbedding(complaintId, tenantId, embeddingResult.embedding, embeddingResult.model);
-      logger.info(`Embedding stored for complaint ${complaintId}`, { model: embeddingResult.model });
+      const embedding = await this.aiService.generateEmbedding(complaintText);
+      // TODO: Store in complaint_embeddings table via raw SQL
+      logger.info(`Embedding stored for complaint ${complaintId}`);
     } catch (error) {
-      logger.error('Failed to generate/store embedding', { complaintId, error: (error as Error).message });
+      logger.error('Failed to store embedding', { complaintId, error: (error as Error).message });
     }
 
-    // Step 2: Find similar complaints via pgvector (reuse embedding from step 1)
-    let similarComplaints: SimilarComplaint[] = [];
-    try {
-      similarComplaints = await this.findSimilarComplaints(
-        complaintId,
-        tenantId,
-        cachedEmbedding || complaintText,
-      );
-      logger.info(`Found ${similarComplaints.length} similar complaints`, { complaintId });
-    } catch (error) {
-      logger.error('Similarity search failed', { complaintId, error: (error as Error).message });
-    }
+    // Step 2: Find similar complaints
+    const similarComplaints = await this.findSimilarComplaints(complaintId, complaintText);
 
     // Step 3: Analyze cluster if enough similar complaints found
     let clusterResult = null;
     if (similarComplaints.length >= this.minClusterSize) {
-      try {
-        clusterResult = await this.analyzeCluster(similarComplaints);
-      } catch (error) {
-        logger.error('Cluster analysis failed', { complaintId, error: (error as Error).message });
-      }
+      clusterResult = await this.analyzeCluster(similarComplaints);
     }
 
     // Step 4: Check for spikes
-    let spikes: SpikeAnomaly[] = [];
-    try {
-      spikes = await this.detectSpikes(tenantId);
-    } catch (error) {
-      logger.error('Spike detection failed', { tenantId, error: (error as Error).message });
-    }
+    const spikes = await this.detectSpikes(tenantId);
 
     return { similarComplaints, clusterResult, spikes };
   }

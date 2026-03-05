@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import '../styles/globals.css';
-import { AuthProvider } from '../components/providers/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'Regulatory Complaint Triage Platform',
@@ -14,9 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        <AuthProvider>{children}</AuthProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

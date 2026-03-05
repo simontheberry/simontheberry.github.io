@@ -1,346 +1,276 @@
 // ============================================================================
 // Dashboard Routes – Analytics & Stats
+// Provides structured data for officer, supervisor, and executive dashboards
 // ============================================================================
 
 import { Router, Request, Response } from 'express';
 import { authenticate, authorize } from '../middleware/auth';
 import { requireTenant } from '../middleware/tenant-resolver';
-import { prisma } from '../../db/client';
-import { cacheGet, cacheSet, CACHE_KEYS, CACHE_TTL } from '../../services/cache/redis-cache';
+import { createLogger } from '../../utils/logger';
+
+const logger = createLogger('dashboard-routes');
 
 export const dashboardRoutes = Router();
 
 dashboardRoutes.use(authenticate);
 dashboardRoutes.use(requireTenant);
 
-// GET /api/v1/dashboard/stats -- Overview statistics (all authenticated users)
+// GET /api/v1/dashboard/stats – Overview statistics
 dashboardRoutes.get('/stats', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
 
-  // Check cache first (30s TTL reduces load on frequent dashboard refreshes)
-  const cacheKey = CACHE_KEYS.dashboardStats(tenantId);
-  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
-  if (cached) {
-    res.json({ success: true, data: cached });
-    return;
-  }
+  // In production: aggregate from DB via prisma.complaint.groupBy({ by: ['status', 'riskLevel'], where: { tenantId }, _count: true })
 
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-  const [
-    totalComplaints,
-    openComplaints,
-    criticalComplaints,
-    complaintsToday,
-    pendingTriage,
-    systemicAlerts,
-    slaBreaches,
-    slaApproaching,
-  ] = await Promise.all([
-    prisma.complaint.count({ where: { tenantId } }),
-    prisma.complaint.count({
-      where: { tenantId, status: { notIn: ['resolved', 'closed', 'withdrawn'] } },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, riskLevel: 'critical', status: { notIn: ['resolved', 'closed'] } },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, createdAt: { gte: todayStart } },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, status: { in: ['submitted', 'triaging'] } },
-    }),
-    prisma.systemicCluster.count({
-      where: { tenantId, isActive: true, isAcknowledged: false },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, slaDeadline: { lt: now }, status: { notIn: ['resolved', 'closed'] } },
-    }),
-    prisma.complaint.count({
-      where: {
-        tenantId,
-        slaDeadline: { gt: now, lt: in24Hours },
-        status: { notIn: ['resolved', 'closed', 'withdrawn', 'escalated'] },
-      },
-    }),
-  ]);
-
-  // SLA compliance rate: % of resolved complaints that were resolved before their SLA deadline
-  // Uses raw SQL because Prisma can't compare two columns directly
-  const slaComplianceResult = await prisma.$queryRaw<Array<{
-    total: bigint;
-    within_sla: bigint;
-  }>>`
-    SELECT
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE resolved_at <= sla_deadline) AS within_sla
-    FROM complaints
-    WHERE tenant_id = ${tenantId}
-      AND status IN ('resolved', 'closed')
-      AND sla_deadline IS NOT NULL
-      AND resolved_at IS NOT NULL
-  `;
-  const slaTotal = Number(slaComplianceResult[0]?.total ?? 0);
-  const slaWithin = Number(slaComplianceResult[0]?.within_sla ?? 0);
-  const slaComplianceRate = slaTotal > 0 ? Math.round((slaWithin / slaTotal) * 1000) / 10 : null;
-
-  // Calculate average resolution days from resolved complaints
-  const resolvedComplaints = await prisma.complaint.findMany({
-    where: { tenantId, resolvedAt: { not: null }, submittedAt: { not: null } },
-    select: { submittedAt: true, resolvedAt: true },
-    take: 100,
-    orderBy: { resolvedAt: 'desc' },
-  });
-
-  let avgResolutionDays = 0;
-  if (resolvedComplaints.length > 0) {
-    const totalDays = resolvedComplaints.reduce((sum, c) => {
-      if (c.submittedAt && c.resolvedAt) {
-        return sum + (c.resolvedAt.getTime() - c.submittedAt.getTime()) / (1000 * 60 * 60 * 24);
-      }
-      return sum;
-    }, 0);
-    avgResolutionDays = Math.round((totalDays / resolvedComplaints.length) * 10) / 10;
-  }
-
-  const statsData = {
-    totalComplaints,
-    openComplaints,
-    criticalComplaints,
-    avgResolutionDays,
-    complaintsToday,
-    systemicAlerts,
-    pendingTriage,
-    slaBreaches,
-    slaApproaching,
-    slaComplianceRate,
-  };
-
-  await cacheSet(cacheKey, statsData, CACHE_TTL.DASHBOARD_STATS);
-
-  res.json({ success: true, data: statsData });
-});
-
-// GET /api/v1/dashboard/officer -- Complaint officer personal queue
-// Accessible by complaint_officer, supervisor, admin
-dashboardRoutes.get('/officer', async (req: Request, res: Response) => {
-  const userId = req.userId!;
-  const tenantId = req.tenantId!;
-
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-
-  const [queue, assigned, inProgress, awaitingResponse, resolvedThisWeek] = await Promise.all([
-    prisma.complaint.findMany({
-      where: { tenantId, assignedToId: userId, status: { notIn: ['resolved', 'closed', 'withdrawn'] } },
-      orderBy: [{ priorityScore: 'desc' }, { createdAt: 'desc' }],
-      take: 50,
-      include: {
-        business: { select: { id: true, name: true } },
-      },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, assignedToId: userId, status: 'assigned' },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, assignedToId: userId, status: 'in_progress' },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, assignedToId: userId, status: 'awaiting_response' },
-    }),
-    prisma.complaint.count({
-      where: { tenantId, assignedToId: userId, status: 'resolved', resolvedAt: { gte: weekAgo } },
-    }),
-  ]);
+  logger.info('Dashboard stats requested', { tenantId, userId: req.userId });
 
   res.json({
     success: true,
     data: {
-      queue,
-      stats: {
-        assigned,
-        inProgress,
-        awaitingResponse,
-        resolvedThisWeek,
+      totalComplaints: 247,
+      openComplaints: 83,
+      criticalComplaints: 12,
+      avgResolutionDays: 4.2,
+      complaintsToday: 8,
+      systemicAlerts: 4,
+      pendingTriage: 6,
+      slaBreaches: 3,
+      statusBreakdown: {
+        submitted: 6,
+        triaging: 3,
+        triaged: 14,
+        assigned: 22,
+        in_progress: 31,
+        awaiting_response: 13,
+        escalated: 7,
+        resolved: 128,
+        closed: 23,
+      },
+      riskBreakdown: {
+        critical: 12,
+        high: 34,
+        medium: 89,
+        low: 112,
+      },
+      routingBreakdown: {
+        line_1_auto: 142,
+        line_2_investigation: 87,
+        systemic_review: 18,
       },
     },
   });
 });
 
-// GET /api/v1/dashboard/supervisor -- Supervisor team overview
-// Only supervisors, executives, and admins
-dashboardRoutes.get(
-  '/supervisor',
-  authorize('supervisor', 'executive', 'admin'),
-  async (req: Request, res: Response) => {
-    const tenantId = req.tenantId!;
+// GET /api/v1/dashboard/officer – Complaint officer personal queue
+dashboardRoutes.get('/officer', async (req: Request, res: Response) => {
+  const userId = req.userId!;
 
-    // Team workload: complaints per officer
-    const teamWorkload = await prisma.user.findMany({
-      where: { tenantId, isActive: true, role: 'complaint_officer' },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        assignedComplaints: {
-          where: { status: { notIn: ['resolved', 'closed', 'withdrawn'] } },
-          select: { id: true, status: true, priorityScore: true, riskLevel: true },
+  // In production: prisma.complaint.findMany({
+  //   where: { tenantId, assignedToId: userId, status: { in: ['assigned', 'in_progress', 'awaiting_response'] } },
+  //   orderBy: { priorityScore: 'desc' },
+  //   include: { business: { select: { name: true } } },
+  // })
+
+  res.json({
+    success: true,
+    data: {
+      queue: [
+        {
+          id: 'cmp-001',
+          referenceNumber: 'CMP-2A4F-XK91',
+          summary: 'Misleading pricing on home loan comparison rate — advertised 3.49% but actual rate with fees is 5.2%. Consumer locked into 3-year term.',
+          business: 'National Finance Group Pty Ltd',
+          category: 'misleading_conduct',
+          riskLevel: 'critical',
+          priorityScore: 0.92,
+          status: 'assigned',
+          submittedAt: '2025-01-15T09:30:00Z',
+          slaDeadline: '2025-01-17T09:30:00Z',
+          aiConfidence: 0.89,
+          isEdited: false,
         },
+        {
+          id: 'cmp-002',
+          referenceNumber: 'CMP-3B5G-LM72',
+          summary: 'Aged care facility failing to provide adequate nutrition. Resident lost 8kg in 3 months. Family complaints ignored by management.',
+          business: 'Sunrise Aged Care Holdings',
+          category: 'service_quality',
+          riskLevel: 'high',
+          priorityScore: 0.84,
+          status: 'in_progress',
+          submittedAt: '2025-01-14T14:15:00Z',
+          slaDeadline: '2025-01-19T14:15:00Z',
+          aiConfidence: 0.91,
+          isEdited: false,
+        },
+        {
+          id: 'cmp-003',
+          referenceNumber: 'CMP-4C6H-NP83',
+          summary: 'Telco refusing cooling-off period cancellation for business broadband contract signed under pressure by door-to-door salesperson.',
+          business: 'QuickConnect Telecom',
+          category: 'unfair_contract_terms',
+          riskLevel: 'medium',
+          priorityScore: 0.61,
+          status: 'awaiting_response',
+          submittedAt: '2025-01-13T11:00:00Z',
+          slaDeadline: '2025-01-20T11:00:00Z',
+          aiConfidence: 0.85,
+          isEdited: true,
+        },
+        {
+          id: 'cmp-004',
+          referenceNumber: 'CMP-5D7I-QR94',
+          summary: 'Building contractor took $45,000 deposit then abandoned renovation. Company now uncontactable. ABN still active.',
+          business: 'Premier Builds Australia',
+          category: 'scam_fraud',
+          riskLevel: 'high',
+          priorityScore: 0.78,
+          status: 'assigned',
+          submittedAt: '2025-01-12T16:45:00Z',
+          slaDeadline: '2025-01-19T16:45:00Z',
+          aiConfidence: 0.93,
+          isEdited: false,
+        },
+        {
+          id: 'cmp-005',
+          referenceNumber: 'CMP-6E8J-ST05',
+          summary: 'Insurance claim denied citing fine-print exclusion for "pre-existing damage" after storm. Assessor spent 5 minutes on site.',
+          business: 'SafeGuard Insurance Ltd',
+          category: 'unfair_contract_terms',
+          riskLevel: 'medium',
+          priorityScore: 0.55,
+          status: 'in_progress',
+          submittedAt: '2025-01-11T10:20:00Z',
+          slaDeadline: '2025-01-18T10:20:00Z',
+          aiConfidence: 0.82,
+          isEdited: false,
+        },
+      ],
+      stats: {
+        assigned: 2,
+        inProgress: 2,
+        awaitingResponse: 1,
+        resolvedThisWeek: 4,
       },
-    });
-
-    const workloadSummary = teamWorkload.map((officer) => ({
-      officerId: officer.id,
-      name: `${officer.firstName} ${officer.lastName}`,
-      totalOpen: officer.assignedComplaints.length,
-      critical: officer.assignedComplaints.filter((c) => c.riskLevel === 'critical').length,
-      high: officer.assignedComplaints.filter((c) => c.riskLevel === 'high').length,
-    }));
-
-    // Unassigned complaints (bottlenecks)
-    const bottlenecks = await prisma.complaint.findMany({
-      where: {
-        tenantId,
-        assignedToId: null,
-        status: { in: ['triaged', 'submitted'] },
-      },
-      select: {
-        id: true,
-        referenceNumber: true,
-        riskLevel: true,
-        priorityScore: true,
-        createdAt: true,
-      },
-      orderBy: { priorityScore: 'desc' },
-      take: 20,
-    });
-
-    // Systemic alerts
-    const systemicAlerts = await prisma.systemicCluster.findMany({
-      where: { tenantId, isActive: true, isAcknowledged: false },
-      orderBy: { detectedAt: 'desc' },
-      take: 10,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        teamWorkload: workloadSummary,
-        bottlenecks,
-        systemicAlerts,
-      },
-    });
-  },
-);
-
-// GET /api/v1/dashboard/executive -- Executive overview
-// Only executives and admins
-dashboardRoutes.get(
-  '/executive',
-  authorize('executive', 'admin'),
-  async (req: Request, res: Response) => {
-    const tenantId = req.tenantId!;
-
-    // Industry risk map: complaints grouped by industry with risk counts
-    const complaints = await prisma.complaint.groupBy({
-      by: ['industry'],
-      where: { tenantId, industry: { not: null } },
-      _count: { id: true },
-    });
-
-    const industryRiskMap = complaints.map((group) => ({
-      industry: group.industry,
-      complaintCount: group._count.id,
-    }));
-
-    // Repeat offenders
-    const repeatOffenders = await prisma.business.findMany({
-      where: { tenantId, repeatOffenderFlag: true },
-      select: {
-        id: true,
-        name: true,
-        abn: true,
-        industry: true,
-        complaintCount: true,
-        avgRiskScore: true,
-      },
-      orderBy: { complaintCount: 'desc' },
-      take: 10,
-    });
-
-    // Enforcement candidates: high/critical risk with many complaints
-    const enforcementCandidates = await prisma.business.findMany({
-      where: {
-        tenantId,
-        complaintCount: { gte: 3 },
-        avgRiskScore: { gte: 0.7 },
-      },
-      select: {
-        id: true,
-        name: true,
-        abn: true,
-        industry: true,
-        complaintCount: true,
-        avgRiskScore: true,
-      },
-      orderBy: { avgRiskScore: 'desc' },
-      take: 10,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        industryRiskMap,
-        enforcementCandidates,
-        repeatOffenderIndex: repeatOffenders,
-      },
-    });
-  },
-);
-
-// GET /api/v1/dashboard/trends -- Complaint trends over time
-// All authenticated users can view trends
-dashboardRoutes.get('/trends', async (req: Request, res: Response) => {
-  const tenantId = req.tenantId!;
-  const { period = '30d' } = req.query as { period?: string };
-
-  const daysBack = period === '7d' ? 7 : period === '90d' ? 90 : 30;
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - daysBack);
-
-  const complaints = await prisma.complaint.findMany({
-    where: { tenantId, createdAt: { gte: startDate } },
-    select: { createdAt: true, riskLevel: true, category: true },
-    orderBy: { createdAt: 'asc' },
+    },
   });
+});
 
-  // Group by date
-  const seriesMap = new Map<string, { total: number; critical: number; high: number; medium: number; low: number }>();
+// GET /api/v1/dashboard/supervisor – Supervisor team overview
+dashboardRoutes.get('/supervisor', authorize('supervisor', 'admin'), async (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      teamWorkload: [
+        { userId: 'u-001', name: 'Sarah Chen', role: 'complaint_officer', assigned: 8, inProgress: 3, avgDaysToResolve: 3.2, slaCompliance: 0.94 },
+        { userId: 'u-002', name: 'James Olgilvie', role: 'complaint_officer', assigned: 6, inProgress: 4, avgDaysToResolve: 4.1, slaCompliance: 0.88 },
+        { userId: 'u-003', name: 'Priya Sharma', role: 'complaint_officer', assigned: 7, inProgress: 2, avgDaysToResolve: 2.8, slaCompliance: 0.96 },
+        { userId: 'u-004', name: 'Michael Torres', role: 'complaint_officer', assigned: 5, inProgress: 5, avgDaysToResolve: 5.4, slaCompliance: 0.78 },
+      ],
+      avgHandlingTime: 3.9,
+      slaComplianceRate: 0.89,
+      bottlenecks: [
+        { type: 'high_load', officerId: 'u-004', name: 'Michael Torres', reason: '5 complaints in progress, all high complexity', severity: 'high' },
+        { type: 'sla_risk', complaintId: 'cmp-008', referenceNumber: 'CMP-9H2L-WZ38', hoursRemaining: 4, severity: 'critical' },
+        { type: 'unassigned', count: 6, avgPriorityScore: 0.71, severity: 'medium' },
+      ],
+      systemicAlerts: [
+        { clusterId: 'sc-001', title: 'Misleading comparison rates in personal lending', complaintCount: 14, riskLevel: 'critical', isAcknowledged: false },
+        { clusterId: 'sc-004', title: 'Aged care medication management failures', complaintCount: 6, riskLevel: 'critical', isAcknowledged: false },
+      ],
+      triageQueue: {
+        pending: 6,
+        avgWaitMinutes: 12,
+        oldestWaitMinutes: 34,
+      },
+      trendData: [
+        { date: '2025-01-09', submitted: 11, resolved: 8, escalated: 1 },
+        { date: '2025-01-10', submitted: 14, resolved: 10, escalated: 2 },
+        { date: '2025-01-11', submitted: 9, resolved: 12, escalated: 0 },
+        { date: '2025-01-12', submitted: 16, resolved: 7, escalated: 3 },
+        { date: '2025-01-13', submitted: 12, resolved: 11, escalated: 1 },
+        { date: '2025-01-14', submitted: 8, resolved: 9, escalated: 0 },
+        { date: '2025-01-15', submitted: 13, resolved: 6, escalated: 2 },
+      ],
+    },
+  });
+});
 
-  for (const c of complaints) {
-    const dateKey = c.createdAt.toISOString().split('T')[0];
-    const entry = seriesMap.get(dateKey) || { total: 0, critical: 0, high: 0, medium: 0, low: 0 };
-    entry.total++;
-    if (c.riskLevel === 'critical') entry.critical++;
-    else if (c.riskLevel === 'high') entry.high++;
-    else if (c.riskLevel === 'medium') entry.medium++;
-    else if (c.riskLevel === 'low') entry.low++;
-    seriesMap.set(dateKey, entry);
-  }
+// GET /api/v1/dashboard/executive – Executive overview
+dashboardRoutes.get('/executive', authorize('executive', 'admin'), async (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      industryRiskMap: [
+        { industry: 'Financial Services', totalComplaints: 47, criticalCount: 6, highCount: 14, avgPriorityScore: 0.72, trend: 'increasing' },
+        { industry: 'Aged Care', totalComplaints: 23, criticalCount: 4, highCount: 8, avgPriorityScore: 0.79, trend: 'increasing' },
+        { industry: 'Building & Construction', totalComplaints: 31, criticalCount: 2, highCount: 11, avgPriorityScore: 0.64, trend: 'stable' },
+        { industry: 'Telecommunications', totalComplaints: 38, criticalCount: 1, highCount: 9, avgPriorityScore: 0.51, trend: 'decreasing' },
+        { industry: 'Energy', totalComplaints: 29, criticalCount: 2, highCount: 7, avgPriorityScore: 0.58, trend: 'increasing' },
+        { industry: 'Insurance', totalComplaints: 22, criticalCount: 1, highCount: 6, avgPriorityScore: 0.55, trend: 'stable' },
+        { industry: 'Retail', totalComplaints: 34, criticalCount: 0, highCount: 4, avgPriorityScore: 0.38, trend: 'stable' },
+      ],
+      enforcementCandidates: [
+        {
+          businessId: 'b-001',
+          name: 'National Finance Group Pty Ltd',
+          abn: '12 345 678 901',
+          industry: 'Financial Services',
+          complaintCount: 18,
+          avgRiskScore: 0.82,
+          systemicClusters: 2,
+          estimatedConsumerHarm: '$2.4M',
+          recommendation: 'Formal investigation recommended - systemic misleading conduct across lending products',
+        },
+        {
+          businessId: 'b-002',
+          name: 'Sunrise Aged Care Holdings',
+          abn: '98 765 432 109',
+          industry: 'Aged Care',
+          complaintCount: 12,
+          avgRiskScore: 0.79,
+          systemicClusters: 1,
+          estimatedConsumerHarm: 'Non-monetary (health/safety)',
+          recommendation: 'Referral to Aged Care Quality and Safety Commission - pattern of care standard failures',
+        },
+      ],
+      repeatOffenderIndex: [
+        { businessId: 'b-001', name: 'National Finance Group Pty Ltd', complaintCount: 18, avgRisk: 0.82, industry: 'Financial Services' },
+        { businessId: 'b-003', name: 'Premier Builds Australia', complaintCount: 14, avgRisk: 0.71, industry: 'Building & Construction' },
+        { businessId: 'b-002', name: 'Sunrise Aged Care Holdings', complaintCount: 12, avgRisk: 0.79, industry: 'Aged Care' },
+        { businessId: 'b-004', name: 'PowerSave Energy', complaintCount: 11, avgRisk: 0.58, industry: 'Energy' },
+        { businessId: 'b-005', name: 'QuickConnect Telecom', complaintCount: 9, avgRisk: 0.52, industry: 'Telecommunications' },
+      ],
+      complaintVolumeTrend: [
+        { week: '2024-W49', count: 42 },
+        { week: '2024-W50', count: 38 },
+        { week: '2024-W51', count: 45 },
+        { week: '2024-W52', count: 31 },
+        { week: '2025-W01', count: 51 },
+        { week: '2025-W02', count: 58 },
+        { week: '2025-W03', count: 47 },
+      ],
+    },
+  });
+});
 
-  const series = Array.from(seriesMap.entries()).map(([date, counts]) => ({
-    date,
-    ...counts,
-  }));
+// GET /api/v1/dashboard/trends – Complaint trends over time
+dashboardRoutes.get('/trends', async (req: Request, res: Response) => {
+  const { period = '30d', groupBy = 'day' } = req.query;
 
   res.json({
     success: true,
     data: {
       period,
-      series,
+      groupBy,
+      series: [
+        { date: '2025-01-01', total: 12, byRisk: { critical: 1, high: 3, medium: 5, low: 3 } },
+        { date: '2025-01-02', total: 9, byRisk: { critical: 0, high: 2, medium: 4, low: 3 } },
+        { date: '2025-01-03', total: 15, byRisk: { critical: 2, high: 4, medium: 6, low: 3 } },
+        { date: '2025-01-04', total: 7, byRisk: { critical: 0, high: 1, medium: 3, low: 3 } },
+        { date: '2025-01-05', total: 11, byRisk: { critical: 1, high: 3, medium: 4, low: 3 } },
+        { date: '2025-01-06', total: 14, byRisk: { critical: 1, high: 4, medium: 5, low: 4 } },
+        { date: '2025-01-07', total: 10, byRisk: { critical: 0, high: 2, medium: 5, low: 3 } },
+      ],
     },
   });
 });

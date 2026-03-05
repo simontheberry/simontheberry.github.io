@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import {
   Shield,
   LayoutDashboard,
@@ -15,8 +15,8 @@ import {
   Menu,
   X,
   Bell,
+  ChevronDown,
 } from 'lucide-react';
-import { useAuth } from '../providers/AuthProvider';
 
 interface NavItem {
   label: string;
@@ -64,29 +64,25 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const ROLE_CONFIG = {
+  admin: { label: 'Administrator', initials: 'AD', name: 'Admin User' },
+  supervisor: { label: 'Supervisor', initials: 'JM', name: 'Jane Morrison' },
+  complaint_officer: { label: 'Complaint Officer', initials: 'SC', name: 'Sarah Chen' },
+  executive: { label: 'Executive', initials: 'RD', name: 'Robert Davis' },
+} as const;
+
+type RoleKey = keyof typeof ROLE_CONFIG;
+
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
-  const userRole = user?.role ?? 'complaint_officer';
+  // Role selector for demo — in production, this comes from JWT/auth context
+  const [userRole, setUserRole] = useState<RoleKey>('admin');
 
   const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(userRole));
-
-  // Redirect to login if not authenticated
-  if (!isLoading && !isAuthenticated) {
-    router.replace('/login');
-    return null;
-  }
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gov-grey-50 flex items-center justify-center">
-        <div className="text-sm text-gov-grey-500">Loading...</div>
-      </div>
-    );
-  }
+  const currentRole = ROLE_CONFIG[userRole];
 
   return (
     <div className="min-h-screen bg-gov-grey-50">
@@ -100,33 +96,79 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             >
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-            <Shield className="h-6 w-6 text-gov-gold" />
-            <span className="text-sm font-semibold text-white hidden sm:block">
-              Complaint Triage Platform
-            </span>
+            <Link href="/" className="flex items-center gap-2">
+              <Shield className="h-6 w-6 text-gov-gold" />
+              <span className="text-sm font-semibold text-white hidden sm:block">
+                Complaint Triage Platform
+              </span>
+            </Link>
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Notifications */}
             <button className="relative text-white/70 hover:text-white">
               <Bell className="h-5 w-5" />
               <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-gov-red text-[10px] font-bold text-white flex items-center justify-center">
                 3
               </span>
             </button>
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-full bg-gov-blue-500 flex items-center justify-center text-xs font-medium text-white">
-                {user ? `${user.firstName[0]}${user.lastName[0]}` : '--'}
-              </div>
-              <span className="text-sm text-white/80 hidden sm:block">
-                {user ? `${user.firstName} ${user.lastName}` : ''}
-              </span>
+
+            {/* Role Selector (demo) */}
+            <div className="relative">
               <button
-                onClick={logout}
-                className="text-white/60 hover:text-white ml-1"
-                aria-label="Log out"
+                onClick={() => setRoleMenuOpen(!roleMenuOpen)}
+                className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-white/10 transition-colors"
               >
-                <LogOut className="h-4 w-4" />
+                <div className="h-7 w-7 rounded-full bg-gov-blue-500 flex items-center justify-center text-xs font-medium text-white">
+                  {currentRole.initials}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-sm text-white/90 font-medium leading-tight">{currentRole.name}</p>
+                  <p className="text-[10px] text-white/50 leading-tight">{currentRole.label}</p>
+                </div>
+                <ChevronDown className="h-3.5 w-3.5 text-white/50" />
               </button>
+
+              {roleMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setRoleMenuOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg bg-white shadow-xl ring-1 ring-gov-grey-200 py-1">
+                    <div className="px-3 py-2 border-b border-gov-grey-100">
+                      <p className="text-[10px] font-medium text-gov-grey-400 uppercase tracking-wider">Switch Role (Demo)</p>
+                    </div>
+                    {(Object.entries(ROLE_CONFIG) as [RoleKey, typeof ROLE_CONFIG[RoleKey]][]).map(([key, cfg]) => (
+                      <button
+                        key={key}
+                        onClick={() => { setUserRole(key); setRoleMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gov-grey-50 transition-colors ${
+                          userRole === key ? 'bg-gov-blue-50' : ''
+                        }`}
+                      >
+                        <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium text-white ${
+                          userRole === key ? 'bg-gov-blue-600' : 'bg-gov-grey-400'
+                        }`}>
+                          {cfg.initials}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-medium ${userRole === key ? 'text-gov-blue-700' : 'text-gov-grey-700'}`}>
+                            {cfg.name}
+                          </p>
+                          <p className="text-xs text-gov-grey-500">{cfg.label}</p>
+                        </div>
+                      </button>
+                    ))}
+                    <div className="border-t border-gov-grey-100 mt-1 pt-1">
+                      <Link
+                        href="/"
+                        className="flex items-center gap-3 px-3 py-2 text-sm text-gov-grey-600 hover:bg-gov-grey-50 transition-colors"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </Link>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -158,6 +200,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
+
+          {/* Sidebar Footer */}
+          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-gov-grey-100">
+            <div className="rounded-md bg-gov-grey-50 px-3 py-2">
+              <p className="text-[10px] font-medium text-gov-grey-400 uppercase tracking-wider">Viewing as</p>
+              <p className="text-sm font-medium text-gov-grey-700">{currentRole.label}</p>
+            </div>
+          </div>
         </aside>
 
         {/* Main Content */}

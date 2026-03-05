@@ -4,7 +4,6 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../../utils/logger';
-import { recordHttpRequest } from '../../services/metrics/metrics';
 
 const logger = createLogger('http');
 
@@ -16,7 +15,6 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     const level = res.statusCode >= 400 ? 'warn' : 'info';
 
     logger[level](`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
-    recordHttpRequest(req.method, req.originalUrl, res.statusCode, duration);
   });
 
   next();

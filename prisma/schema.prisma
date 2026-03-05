@@ -170,7 +170,6 @@ model Complaint {
   @@index([tenantId, assignedToId])
   @@index([tenantId, routingDestination])
   @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, slaDeadline]) // SLA breach detection queries
   @@index([businessId])
   @@map("complaints")
 }
@@ -182,13 +181,11 @@ model Complaint {
 model ComplaintEmbedding {
   id          String @id @default(uuid())
   complaintId String @unique @map("complaint_id")
-  tenantId    String @map("tenant_id")
   // vector(1536) column created via raw SQL migration
   // embedding Unsupported("vector(1536)")
   model       String @default("text-embedding-ada-002")
   createdAt   DateTime @default(now()) @map("created_at")
 
-  @@index([tenantId])
   @@map("complaint_embeddings")
 }
 
@@ -244,7 +241,6 @@ model Evidence {
 
   complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
 
-  @@index([complaintId]) // Evidence listing by complaint
   @@map("evidence")
 }
 
@@ -306,8 +302,8 @@ model SystemicCluster {
   tenant     Tenant      @relation(fields: [tenantId], references: [id])
   complaints Complaint[]
 
-  @@index([tenantId, isActive]) // Active clusters filtering
-  @@index([tenantId, isActive, riskLevel]) // Dashboard filtering by active + risk
+  @@index([tenantId, isActive])
+  @@index([tenantId, riskLevel])
   @@map("systemic_clusters")
 }
 
@@ -333,7 +329,7 @@ model Communication {
   complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
   creator   User?     @relation(fields: [createdBy], references: [id])
 
-  @@index([complaintId, createdAt(sort: Desc)]) // Communication history with ordering
+  @@index([complaintId])
   @@map("communications")
 }
 
@@ -351,7 +347,6 @@ model CommunicationTemplate {
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
-  @@index([tenantId, isActive])
   @@map("communication_templates")
 }
 
@@ -392,13 +387,10 @@ model Escalation {
   toStatus    String   @map("to_status")
   reason      String
   escalatedBy String?  @map("escalated_by")
-  tenantId    String?  @map("tenant_id") // For escalation queries by tenant
   createdAt   DateTime @default(now()) @map("created_at")
 
   complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
 
-  @@index([complaintId]) // Escalation history by complaint
-  @@index([tenantId, createdAt(sort: Desc)]) // Escalation dashboard queries
   @@map("escalations")
 }
 
@@ -442,7 +434,6 @@ model AuditLog {
   user   User?  @relation(fields: [userId], references: [id])
 
   @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc)]) // Compliance report queries by action
   @@index([entity, entityId])
   @@map("audit_logs")
 }
