@@ -11,6 +11,7 @@ import { intakeRoutes } from './intake.routes';
 import { systemicRoutes } from './systemic.routes';
 import { communicationRoutes } from './communication.routes';
 import { authRoutes } from './auth.routes';
+import { evidenceRoutes } from './evidence.routes';
 
 export const apiRouter = Router();
 
@@ -25,3 +26,4 @@ apiRouter.use('/dashboard', dashboardRoutes);
 apiRouter.use('/businesses', businessRoutes);
 apiRouter.use('/systemic', systemicRoutes);
 apiRouter.use('/communications', communicationRoutes);
+apiRouter.use('/evidence', evidenceRoutes);

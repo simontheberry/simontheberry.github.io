@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { useApi } from '../hooks/useApi';
 import { ErrorState } from './LoadingSkeleton';
 import { CommunicationDraftPanel } from './CommunicationDraftPanel';
+import { EvidencePanel } from './EvidencePanel';
 import { COMPLAINT_CATEGORIES, RISK_LEVEL_CONFIG, STATUS_LABELS, ROUTING_LABELS } from '../../src/shared/constants/categories';
 import type { ComplaintData } from '../../src/shared/types/complaint';
 
@@ -160,6 +161,9 @@ export function ComplaintDetailView({ complaintId }: Props) {
               </div>
             </div>
           )}
+
+          {/* Evidence & Attachments */}
+          <EvidencePanel complaintId={complaint.id} />
 
           {/* Communication Draft */}
           <CommunicationDraftPanel
