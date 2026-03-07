@@ -5,9 +5,13 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
+import { Decimal } from '@prisma/client/runtime/library';
 import { getAiService } from '../../services/ai/ai-service';
 import { createLogger } from '../../utils/logger';
 import { rateLimit } from '../middleware/rate-limiter';
+import { prisma } from '../../db/client';
+import { writeAuditLog } from '../../db/audit';
+import { AppError } from '../middleware/error-handler';
 
 const logger = createLogger('intake-routes');
 
@@ -88,35 +92,126 @@ intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) 
   try {
     const body = complaintSubmissionSchema.parse(req.body);
 
-    const referenceNumber = `CMP-${Date.now().toString(36).toUpperCase()}-${uuidv4().slice(0, 4).toUpperCase()}`;
+    // 1. Resolve tenant from slug
+    const tenant = await prisma.tenant.findUnique({
+      where: { slug: body.tenantSlug },
+    });
+
+    if (!tenant) {
+      throw new AppError(400, 'INVALID_TENANT', 'Tenant not found');
+    }
+
     const complaintId = uuidv4();
+    const referenceNumber = `CMP-${Date.now().toString(36).toUpperCase()}-${uuidv4().slice(0, 4).toUpperCase()}`;
 
     // Calculate SLA deadline (48 hours for initial triage)
     const slaDeadline = new Date();
     slaDeadline.setHours(slaDeadline.getHours() + 48);
 
-    // In production with database:
-    // 1. Resolve tenant from slug via prisma.tenant.findUnique({ where: { slug } })
     // 2. Find or create business record
-    // 3. Create complaint record
-    // 4. Create complaint event (audit trail)
-    // 5. Queue triage job via BullMQ
-    // 6. Queue confirmation email
+    let business = null;
+    if (body.business.abn) {
+      business = await prisma.business.findUnique({
+        where: { abn: body.business.abn },
+      });
+      if (!business) {
+        business = await prisma.business.create({
+          data: {
+            abn: body.business.abn,
+            name: body.business.name,
+            entityType: body.business.entityType || 'Unknown',
+            entityStatus: body.business.entityStatus || 'Active',
+            website: body.business.website,
+            industry: body.business.industry,
+            isVerified: body.business.isVerified || false,
+            tenantId: tenant.id,
+          },
+        });
+      }
+    } else {
+      // Create unverified business record for manual entry
+      business = await prisma.business.create({
+        data: {
+          abn: null,
+          name: body.business.name,
+          entityType: 'Unknown',
+          entityStatus: 'Unknown',
+          website: body.business.website,
+          industry: body.business.industry,
+          isVerified: false,
+          tenantId: tenant.id,
+        },
+      });
+    }
 
-    logger.info('Complaint submitted', {
+    // 3. Create complaint record
+    const complaint = await prisma.complaint.create({
+      data: {
+        id: complaintId,
+        referenceNumber,
+        tenantId: tenant.id,
+        businessId: business.id,
+        status: 'submitted',
+        channel: 'portal',
+        rawText: body.complaint.rawText,
+        category: body.complaint.category || 'other',
+        industry: body.business.industry || 'other',
+        monetaryValue: body.complaint.monetaryValue ? new Decimal(body.complaint.monetaryValue) : null,
+        monetaryCurrency: 'AUD',
+        incidentDate: body.complaint.incidentDate ? new Date(body.complaint.incidentDate) : null,
+        slaDeadline,
+        submittedAt: new Date(),
+        // Complainant info
+        complainantFirstName: body.complainant.firstName,
+        complainantLastName: body.complainant.lastName,
+        complainantEmail: body.complainant.email,
+        complainantPhone: body.complainant.phone,
+        complainantAddress: body.complainant.address || null,
+      },
+    });
+
+    // 4. Create initial complaint event (submitted)
+    await prisma.complaintEvent.create({
+      data: {
+        complaintId: complaint.id,
+        eventType: 'submitted',
+        description: 'Complaint submitted via public portal',
+        createdBy: 'system',
+      },
+    });
+
+    // 5. Write audit log
+    await writeAuditLog({
+      tenantId: tenant.id,
+      userId: 'system',
+      action: 'complaint.submitted',
+      entity: 'Complaint',
+      entityId: complaint.id,
+      newValues: {
+        referenceNumber,
+        businessName: body.business.name,
+        category: body.complaint.category,
+      },
+    });
+
+    logger.info('Complaint submitted and persisted', {
       referenceNumber,
-      complaintId,
-      tenantSlug: body.tenantSlug,
+      complaintId: complaint.id,
+      tenantId: tenant.id,
+      businessId: business.id,
       channel: 'portal',
       hasAbn: !!body.business.abn,
       textLength: body.complaint.rawText.length,
     });
 
+    // TODO: Queue triage job via BullMQ (Task #1 future work)
+    // TODO: Queue confirmation email via mail service (Task #6 future work)
+
     res.status(201).json({
       success: true,
       data: {
         referenceNumber,
-        complaintId,
+        complaintId: complaint.id,
         slaDeadline: slaDeadline.toISOString(),
         message: 'Your complaint has been received and will be reviewed. You will receive updates at the email address provided.',
       },
@@ -133,7 +228,14 @@ intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) 
       });
     }
 
-    logger.error('Complaint submission failed', { error });
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: { code: error.code, message: error.message },
+      });
+    }
+
+    logger.error('Complaint submission failed', { error: error instanceof Error ? error.message : 'Unknown error' });
     return res.status(500).json({
       success: false,
       error: { message: 'Internal server error' },
