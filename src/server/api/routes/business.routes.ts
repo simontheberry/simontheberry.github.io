@@ -26,7 +26,15 @@ const searchQuerySchema = z.object({
  */
 businessRoutes.get('/search', async (req: Request, res: Response) => {
   try {
-    const { name } = searchQuerySchema.parse(req.query);
+    // Normalize query params (can be string or string[] from Express)
+    const normalizedQuery = Object.fromEntries(
+      Object.entries(req.query).map(([key, val]) => [
+        key,
+        Array.isArray(val) ? val[0] : val,
+      ])
+    );
+
+    const { name } = searchQuerySchema.parse(normalizedQuery);
 
     logger.info('Business search requested', { query: name });
 

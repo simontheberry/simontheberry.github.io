@@ -66,7 +66,15 @@ const updateComplaintSchema = z.object({
 
 // GET /api/v1/complaints – List complaints with filtering & pagination
 complaintRoutes.get('/', async (req: Request, res: Response) => {
-  const filters = complaintFiltersSchema.parse(req.query);
+  // Normalize query params (can be string or string[] from Express)
+  const normalizedQuery = Object.fromEntries(
+    Object.entries(req.query).map(([key, val]) => [
+      key,
+      Array.isArray(val) ? val[0] : val,
+    ])
+  );
+
+  const filters = complaintFiltersSchema.parse(normalizedQuery);
   const tenantId = req.tenantId!;
 
   // In production: prisma.complaint.findMany with dynamic where, orderBy, skip, take
