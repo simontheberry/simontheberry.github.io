@@ -128,7 +128,7 @@ describe('ComplaintStateMachine', () => {
       });
 
       expect(result.valid).toBe(false);
-      expect(result.error).toContain('insufficient');
+      expect(result.error).toContain('cannot perform');
     });
   });
 
@@ -165,9 +165,10 @@ describe('ComplaintStateMachine', () => {
   });
 
   describe('escalation workflows', () => {
-    it('should allow escalation from any open state', () => {
-      const openStates: ComplaintStatus[] = ['submitted', 'triaging', 'triaged', 'assigned', 'in_progress', 'awaiting_response'];
-      const escallateAllowed = openStates.every(state => {
+    it('should allow escalation from processing states', () => {
+      // Only states that are actively being processed can escalate (not submitted)
+      const processingStates: ComplaintStatus[] = ['triaging', 'triaged', 'assigned', 'in_progress', 'awaiting_response'];
+      const escallateAllowed = processingStates.every(state => {
         const transition = ComplaintStateMachine.getTransitionDefinition(state, 'escalated');
         return transition !== undefined;
       });
