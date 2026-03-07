@@ -16,14 +16,14 @@ import { StatsCard } from '../../../components/dashboard/StatsCard';
 interface ComplaintListItem {
   id: string;
   referenceNumber: string;
-  summary?: string;
-  business?: string;
-  category?: string;
-  riskLevel?: string;
-  priorityScore?: number;
+  summary: string;
+  business: string;
+  category: string;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  priorityScore: number;
   status: string;
-  submittedAt?: string;
-  slaDeadline?: string;
+  submittedAt: string;
+  slaDeadline: string;
 }
 
 export default function OfficerDashboardPage() {
