@@ -42,16 +42,6 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   };
 
-  const validateFile = (file: File) => {
-    if (file.size > maxFileSize) {
-      return `File is too large (max ${formatFileSize(maxFileSize)})`;
-    }
-    if (!allowedTypes.includes(file.type)) {
-      return 'File type not supported';
-    }
-    return null;
-  };
-
   const handleFiles = useCallback(
     async (fileList: FileList) => {
       if (files.length >= maxFiles) {
@@ -63,7 +53,14 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
       const errors: string[] = [];
 
       for (const file of filesToProcess) {
-        const error = validateFile(file);
+        // Validate file inline to avoid dependency issues
+        let error: string | null = null;
+        if (file.size > maxFileSize) {
+          error = `File is too large (max ${formatFileSize(maxFileSize)})`;
+        } else if (!allowedTypes.includes(file.type)) {
+          error = 'File type not supported';
+        }
+
         if (error) {
           errors.push(`${file.name}: ${error}`);
         }
@@ -110,7 +107,7 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
         setIsUploading(false);
       }
     },
-    [files, maxFiles, uploadedFileIds, onFileIdsChange, validateFile]
+    [files, maxFiles, uploadedFileIds, onFileIdsChange]
   );
 
   const removeFile = useCallback(

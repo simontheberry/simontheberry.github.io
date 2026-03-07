@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Shield, Loader2 } from 'lucide-react';
 import { useAuth } from '../../components/providers/AuthProvider';
 
+// Skip static generation - this page requires authentication context
+export const dynamic = 'force-dynamic';
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated } = useAuth();
