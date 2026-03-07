@@ -88,7 +88,7 @@ export function getMetrics() {
 
   // Top routes by request count
   const routes: Array<{ route: string } & ReturnType<typeof bucketStats>> = [];
-  for (const [route, bucket] of httpLatency.entries()) {
+  for (const [route, bucket] of Array.from(httpLatency.entries())) {
     routes.push({ route, ...bucketStats(bucket) });
   }
   routes.sort((a, b) => b.count - a.count);

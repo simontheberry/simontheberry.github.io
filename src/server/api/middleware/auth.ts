@@ -3,10 +3,20 @@
 // ============================================================================
 
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { AppError } from './error-handler';
 import type { AuthTokenPayload, UserRole } from '../../../shared/types/user';
+
+declare global {
+  namespace Express {
+    interface Request {
+      tenantId?: string;
+      userId?: string;
+      userRole?: string;
+    }
+  }
+}
 
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;

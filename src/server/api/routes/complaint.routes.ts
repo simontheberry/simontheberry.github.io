@@ -227,12 +227,12 @@ complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
     }
   }
 
-  const updateData: Record<string, unknown> = {};
-  if (body.status !== undefined) updateData.status = body.status;
-  if (body.category !== undefined) updateData.category = body.category;
-  if (body.riskLevel !== undefined) updateData.riskLevel = body.riskLevel;
-  if (body.summary !== undefined) updateData.summary = body.summary;
-  if (body.routingDestination !== undefined) updateData.routingDestination = body.routingDestination;
+  const updateData: Parameters<typeof prisma.complaint.update>[0]['data'] = {};
+  if (body.status !== undefined) (updateData as any).status = body.status;
+  if (body.category !== undefined) (updateData as any).category = body.category;
+  if (body.riskLevel !== undefined) (updateData as any).riskLevel = body.riskLevel;
+  if (body.summary !== undefined) (updateData as any).summary = body.summary;
+  if (body.routingDestination !== undefined) (updateData as any).routingDestination = body.routingDestination;
 
   const updated = await prisma.complaint.update({
     where: { id },
