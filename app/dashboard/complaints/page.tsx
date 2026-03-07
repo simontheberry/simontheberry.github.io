@@ -3,98 +3,47 @@
 import { useState } from 'react';
 import { Search, Filter, SlidersHorizontal } from 'lucide-react';
 import { ComplaintQueueTable } from '../../../components/dashboard/ComplaintQueueTable';
+import { useApi } from '../../../components/hooks/useApi';
 import { COMPLAINT_CATEGORIES, INDUSTRY_CLASSIFICATIONS, RISK_LEVEL_CONFIG } from '../../../src/shared/constants/categories';
 
-const DEMO_ALL_COMPLAINTS = [
-  {
-    id: '1',
-    referenceNumber: 'CMP-2A4F-XK91',
-    summary: 'Misleading pricing on home loan comparison rate.',
-    business: 'National Finance Group Pty Ltd',
-    category: 'misleading_conduct',
-    riskLevel: 'critical' as const,
-    priorityScore: 0.92,
-    status: 'triaged',
-    submittedAt: '2025-01-15T09:30:00Z',
-    slaDeadline: '2025-01-22T09:30:00Z',
-  },
-  {
-    id: '2',
-    referenceNumber: 'CMP-3B5G-LM72',
-    summary: 'Aged care facility failing to provide adequate nutrition standards.',
-    business: 'Sunrise Aged Care Holdings',
-    category: 'service_quality',
-    riskLevel: 'high' as const,
-    priorityScore: 0.84,
-    status: 'assigned',
-    submittedAt: '2025-01-14T14:15:00Z',
-    slaDeadline: '2025-01-21T14:15:00Z',
-  },
-  {
-    id: '3',
-    referenceNumber: 'CMP-4C6H-NP83',
-    summary: 'Telco refusing cooling-off period cancellation.',
-    business: 'QuickConnect Telecom',
-    category: 'unfair_contract_terms',
-    riskLevel: 'medium' as const,
-    priorityScore: 0.61,
-    status: 'in_progress',
-    submittedAt: '2025-01-13T11:00:00Z',
-    slaDeadline: '2025-01-20T11:00:00Z',
-  },
-  {
-    id: '4',
-    referenceNumber: 'CMP-5D7I-QR94',
-    summary: 'Building contractor abandoned renovation mid-project.',
-    business: 'Premier Builds Australia',
-    category: 'scam_fraud',
-    riskLevel: 'high' as const,
-    priorityScore: 0.78,
-    status: 'triaged',
-    submittedAt: '2025-01-12T16:45:00Z',
-    slaDeadline: '2025-01-19T16:45:00Z',
-  },
-  {
-    id: '5',
-    referenceNumber: 'CMP-6E8J-ST05',
-    summary: 'Insurance claim denial citing fine print exclusion.',
-    business: 'SafeGuard Insurance Ltd',
-    category: 'unfair_contract_terms',
-    riskLevel: 'medium' as const,
-    priorityScore: 0.55,
-    status: 'awaiting_response',
-    submittedAt: '2025-01-11T10:20:00Z',
-    slaDeadline: '2025-01-18T10:20:00Z',
-  },
-  {
-    id: '6',
-    referenceNumber: 'CMP-7F9K-UV16',
-    summary: 'Energy provider overcharging during peak tariff incorrectly.',
-    business: 'PowerSave Energy',
-    category: 'billing_dispute',
-    riskLevel: 'low' as const,
-    priorityScore: 0.32,
-    status: 'in_progress',
-    submittedAt: '2025-01-10T08:00:00Z',
-    slaDeadline: '2025-01-17T08:00:00Z',
-  },
-];
+interface ComplaintListItem {
+  id: string;
+  referenceNumber: string;
+  summary?: string;
+  business?: string;
+  category?: string;
+  riskLevel?: string;
+  priorityScore?: number;
+  status: string;
+  submittedAt?: string;
+  slaDeadline?: string;
+}
 
 export default function ComplaintsListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRisk, setFilterRisk] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
 
-  const filtered = DEMO_ALL_COMPLAINTS.filter((c) => {
-    if (searchQuery && !c.summary.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !c.referenceNumber.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !c.business.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    if (filterRisk && c.riskLevel !== filterRisk) return false;
-    if (filterCategory && c.category !== filterCategory) return false;
-    return true;
+  // Fetch complaints from API
+  const queryParams = new URLSearchParams({
+    page: page.toString(),
+    pageSize: pageSize.toString(),
+    ...(searchQuery && { search: searchQuery }),
+    ...(filterRisk && { riskLevel: filterRisk }),
+    ...(filterCategory && { category: filterCategory }),
+    sortBy: 'priorityScore',
+    sortOrder: 'desc',
   });
+
+  const { data: response, isLoading, error } = useApi<{
+    data: ComplaintListItem[];
+    meta: { page: number; pageSize: number; totalCount: number; totalPages: number };
+  }>(`/api/v1/complaints?${queryParams}`);
+
+  const complaints = response?.data || [];
+  const meta = response?.meta || { page: 1, pageSize: 20, totalCount: 0, totalPages: 0 };
 
   return (
     <div>
@@ -114,7 +63,10 @@ export default function ComplaintsListPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1); // Reset to first page on search
+                }}
                 className="input-field pl-9"
                 placeholder="Search by reference, business, or keyword..."
               />
@@ -123,7 +75,10 @@ export default function ComplaintsListPage() {
 
           <select
             value={filterRisk}
-            onChange={(e) => setFilterRisk(e.target.value)}
+            onChange={(e) => {
+              setFilterRisk(e.target.value);
+              setPage(1);
+            }}
             className="input-field w-auto"
           >
             <option value="">All Risk Levels</option>
@@ -134,7 +89,10 @@ export default function ComplaintsListPage() {
 
           <select
             value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
+            onChange={(e) => {
+              setFilterCategory(e.target.value);
+              setPage(1);
+            }}
             className="input-field w-auto"
           >
             <option value="">All Categories</option>
@@ -145,14 +103,64 @@ export default function ComplaintsListPage() {
         </div>
 
         <div className="mt-2 text-xs text-gov-grey-500">
-          Showing {filtered.length} of {DEMO_ALL_COMPLAINTS.length} complaints
+          {isLoading ? 'Loading...' : `Showing ${complaints.length} of ${meta.totalCount} complaints`}
         </div>
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="card bg-red-50 border border-red-200 p-4 mb-6">
+          <p className="text-sm text-red-700">Failed to load complaints: {error}</p>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="card">
+          <div className="p-8 text-center text-gov-grey-500">
+            <p className="text-sm">Loading complaints...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && !error && complaints.length === 0 && (
+        <div className="card">
+          <div className="p-8 text-center text-gov-grey-500">
+            <p className="text-sm">No complaints found matching your filters.</p>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
-      <div className="card">
-        <ComplaintQueueTable complaints={filtered} />
-      </div>
+      {!isLoading && complaints.length > 0 && (
+        <div className="card">
+          <ComplaintQueueTable complaints={complaints} />
+
+          {/* Pagination */}
+          <div className="border-t border-gov-grey-200 p-4 flex items-center justify-between">
+            <div className="text-xs text-gov-grey-500">
+              Page {meta.page} of {meta.totalPages}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={meta.page <= 1}
+                className="px-3 py-1 rounded border border-gov-grey-300 text-sm hover:bg-gov-grey-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(meta.totalPages, p + 1))}
+                disabled={meta.page >= meta.totalPages}
+                className="px-3 py-1 rounded border border-gov-grey-300 text-sm hover:bg-gov-grey-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
