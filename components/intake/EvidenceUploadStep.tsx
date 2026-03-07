@@ -161,15 +161,15 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
             multiple
             onChange={(e) => e.target.files && handleFiles(e.target.files)}
             className="absolute inset-0 cursor-pointer opacity-0"
-            disabled={isUploading || files.length >= maxFiles}
-            accept={allowedTypes.join(',')}
+            disabled={isUploading || files.length >= MAX_FILES}
+            accept={ALLOWED_TYPES.join(',')}
           />
           <Upload className="h-8 w-8 text-gov-grey-400 mx-auto mb-2" aria-hidden="true" />
           <p className="text-sm font-medium text-gov-grey-900">
             Drag and drop files here or click to select
           </p>
           <p className="text-xs text-gov-grey-500 mt-1">
-            Supported: PDF, images (JPEG, PNG), Word, text • Max {formatFileSize(maxFileSize)} per file
+            Supported: PDF, images (JPEG, PNG), Word, text • Max {formatFileSize(MAX_FILE_SIZE)} per file
           </p>
         </div>
 
@@ -185,7 +185,7 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
         {files.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-gov-grey-500 uppercase tracking-wide">
-              Uploaded files ({files.length}/{maxFiles})
+              Uploaded files ({files.length}/{MAX_FILES})
             </p>
             {files.map((file) => (
               <div key={file.id} className="flex items-center gap-3 p-3 rounded-md border border-gov-grey-200 bg-gov-grey-50">
