@@ -16,23 +16,23 @@ interface UploadedFile {
   uploadedAt: Date;
 }
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES = 10;
+const ALLOWED_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+];
+
 export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
-
-  const maxFileSize = 10 * 1024 * 1024; // 10MB
-  const maxFiles = 10;
-  const allowedTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/plain',
-  ];
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -44,20 +44,20 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
 
   const handleFiles = useCallback(
     async (fileList: FileList) => {
-      if (files.length >= maxFiles) {
-        setUploadError(`Maximum ${maxFiles} files allowed`);
+      if (files.length >= MAX_FILES) {
+        setUploadError(`Maximum ${MAX_FILES} files allowed`);
         return;
       }
 
-      const filesToProcess = Array.from(fileList).slice(0, maxFiles - files.length);
+      const filesToProcess = Array.from(fileList).slice(0, MAX_FILES - files.length);
       const errors: string[] = [];
 
       for (const file of filesToProcess) {
         // Validate file inline to avoid dependency issues
         let error: string | null = null;
-        if (file.size > maxFileSize) {
-          error = `File is too large (max ${formatFileSize(maxFileSize)})`;
-        } else if (!allowedTypes.includes(file.type)) {
+        if (file.size > MAX_FILE_SIZE) {
+          error = `File is too large (max ${formatFileSize(MAX_FILE_SIZE)})`;
+        } else if (!ALLOWED_TYPES.includes(file.type)) {
           error = 'File type not supported';
         }
 
@@ -107,7 +107,7 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
         setIsUploading(false);
       }
     },
-    [files, maxFiles, uploadedFileIds, onFileIdsChange]
+    [files, uploadedFileIds, onFileIdsChange]
   );
 
   const removeFile = useCallback(
