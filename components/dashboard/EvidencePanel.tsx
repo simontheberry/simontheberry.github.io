@@ -177,7 +177,7 @@ export function EvidencePanel({ complaintId }: Props) {
     } finally {
       setIsDeleting(false);
     }
-  }, [token, refetch]);
+  }, [token, refetch, complaintId]);
 
   const items = evidence ?? [];
 

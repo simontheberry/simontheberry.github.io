@@ -88,7 +88,7 @@ export function IncidentDateStep({ form, updateForm }: Props) {
         <p className="text-xs font-medium text-gov-grey-700 mb-2">Need help?</p>
         <ul className="text-xs text-gov-grey-600 space-y-1 list-disc list-inside">
           <li>Use your purchase receipt, email, or transaction details to find the date</li>
-          <li>If you're unsure of the exact date, select your best estimate</li>
+          <li>If you&apos;re unsure of the exact date, select your best estimate</li>
           <li>We can discuss exact timing during our investigation</li>
         </ul>
       </div>

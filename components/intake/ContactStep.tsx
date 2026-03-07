@@ -102,7 +102,7 @@ export function ContactStep({ form, updateForm }: Props) {
             />
           </div>
           <p className="mt-1 text-xs text-gov-grey-500">
-            We'll use this to contact you about your complaint
+            We&apos;ll use this to contact you about your complaint
           </p>
         </div>
 

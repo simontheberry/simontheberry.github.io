@@ -110,7 +110,7 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
         setIsUploading(false);
       }
     },
-    [files, maxFiles, uploadedFileIds, onFileIdsChange]
+    [files, maxFiles, uploadedFileIds, onFileIdsChange, validateFile]
   );
 
   const removeFile = useCallback(
@@ -234,7 +234,7 @@ export function EvidenceUploadStep({ uploadedFileIds, onFileIdsChange }: Props) 
 
         {/* Privacy Note */}
         <p className="text-xs text-gov-grey-500">
-          Only upload files you're comfortable sharing with the business if needed for investigation. Do not include sensitive personal information of others.
+          Only upload files you&apos;re comfortable sharing with the business if needed for investigation. Do not include sensitive personal information of others.
         </p>
       </div>
     </div>
