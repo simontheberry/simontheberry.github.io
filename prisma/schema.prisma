@@ -35,8 +35,23 @@ model Tenant {
   systemicClusters   SystemicCluster[]
   auditLogs          AuditLog[]
   communicationTemplates CommunicationTemplate[]
+  theme              TenantTheme?
 
   @@map("tenants")
+}
+
+model TenantTheme {
+  id          String   @id @default(uuid())
+  tenantId    String   @unique @map("tenant_id")
+  preset      String   @default("federal-blue")
+  colorMode   String   @default("light") @map("color_mode")
+  overrides   Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_themes")
 }
 
 model Team {

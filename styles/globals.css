@@ -4,6 +4,137 @@
 
 @layer base {
   :root {
+    /* ===== Semantic Color Tokens (Federal Blue default) ===== */
+
+    /* Primary */
+    --color-primary-50: #eef2ff;
+    --color-primary-100: #dce4ff;
+    --color-primary-200: #b9c9fe;
+    --color-primary-300: #8ba5fc;
+    --color-primary-400: #5c7cf8;
+    --color-primary-500: #313E8A;
+    --color-primary-600: #2B3679;
+    --color-primary-700: #1e2a5e;
+    --color-primary-800: #1a2350;
+    --color-primary-900: #111840;
+    --color-primary-950: #0a0e28;
+
+    /* Secondary */
+    --color-secondary-50: #fdf8ed;
+    --color-secondary-100: #f9eece;
+    --color-secondary-200: #f2d88f;
+    --color-secondary-300: #e9bd4f;
+    --color-secondary-400: #dea22a;
+    --color-secondary-500: #B78B2D;
+    --color-secondary-600: #9a7225;
+    --color-secondary-700: #7a5a1e;
+    --color-secondary-800: #5d4418;
+    --color-secondary-900: #413012;
+    --color-secondary-950: #271c0b;
+
+    /* Accent */
+    --color-accent-50: #f0f7ff;
+    --color-accent-100: #dfeeff;
+    --color-accent-200: #b8dbff;
+    --color-accent-300: #7ac0ff;
+    --color-accent-400: #33a0ff;
+    --color-accent-500: #0080f0;
+    --color-accent-600: #0066cc;
+    --color-accent-700: #004d99;
+    --color-accent-800: #003a75;
+    --color-accent-900: #002952;
+    --color-accent-950: #001a36;
+
+    /* Danger */
+    --color-danger-50: #fef2f0;
+    --color-danger-100: #fde0db;
+    --color-danger-200: #fcc1b8;
+    --color-danger-300: #f89585;
+    --color-danger-400: #f06650;
+    --color-danger-500: #C23B22;
+    --color-danger-600: #a5321d;
+    --color-danger-700: #852818;
+    --color-danger-800: #681f13;
+    --color-danger-900: #4d170e;
+    --color-danger-950: #330f0a;
+
+    /* Warning */
+    --color-warning-50: #fffbeb;
+    --color-warning-100: #fef3c7;
+    --color-warning-200: #fde68a;
+    --color-warning-300: #fcd34d;
+    --color-warning-400: #fbbf24;
+    --color-warning-500: #d97706;
+    --color-warning-600: #b45309;
+    --color-warning-700: #92400e;
+    --color-warning-800: #78350f;
+    --color-warning-900: #5c2d0e;
+    --color-warning-950: #3d1e09;
+
+    /* Success */
+    --color-success-50: #f0fdf4;
+    --color-success-100: #dcfce7;
+    --color-success-200: #bbf7d0;
+    --color-success-300: #86efac;
+    --color-success-400: #4ade80;
+    --color-success-500: #2D7D46;
+    --color-success-600: #25663a;
+    --color-success-700: #1e5230;
+    --color-success-800: #183f26;
+    --color-success-900: #132d1c;
+    --color-success-950: #0d1f14;
+
+    /* Info */
+    --color-info-50: #eff6ff;
+    --color-info-100: #dbeafe;
+    --color-info-200: #bfdbfe;
+    --color-info-300: #93c5fd;
+    --color-info-400: #60a5fa;
+    --color-info-500: #3b82f6;
+    --color-info-600: #2563eb;
+    --color-info-700: #1d4ed8;
+    --color-info-800: #1e40af;
+    --color-info-900: #1e3a8a;
+    --color-info-950: #172554;
+
+    /* Neutral */
+    --color-neutral-50: #f8fafc;
+    --color-neutral-100: #f1f5f9;
+    --color-neutral-200: #e2e8f0;
+    --color-neutral-300: #cbd5e1;
+    --color-neutral-400: #94a3b8;
+    --color-neutral-500: #64748b;
+    --color-neutral-600: #475569;
+    --color-neutral-700: #334155;
+    --color-neutral-800: #1e293b;
+    --color-neutral-900: #0f172a;
+    --color-neutral-950: #020617;
+
+    /* ===== Surface Tokens ===== */
+    --surface-background: #f8fafc;
+    --surface-main: #ffffff;
+    --surface-raised: #ffffff;
+    --surface-overlay: rgba(15, 23, 42, 0.5);
+    --surface-border: #e2e8f0;
+    --surface-border-subtle: #f1f5f9;
+
+    /* ===== Text Tokens ===== */
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --text-inverse: #ffffff;
+    --text-link: #313E8A;
+
+    /* ===== Layout Tokens ===== */
+    --header-bg: #1B2A4A;
+    --header-text: #ffffff;
+    --sidebar-bg: #ffffff;
+    --sidebar-text: #475569;
+    --sidebar-active-bg: #eef2ff;
+    --sidebar-active-text: #1e2a5e;
+    --brand-mark: #B78B2D;
+
+    /* Legacy compat aliases */
     --color-bg: 248 250 252;
     --color-surface: 255 255 255;
     --color-border: 226 232 240;
@@ -13,13 +144,117 @@
     --color-primary-light: 96 165 250;
   }
 
+  .dark {
+    --surface-background: #0f172a;
+    --surface-main: #1e293b;
+    --surface-raised: #334155;
+    --surface-overlay: rgba(0, 0, 0, 0.6);
+    --surface-border: #334155;
+    --surface-border-subtle: #1e293b;
+
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --text-inverse: #0f172a;
+    --text-link: #8ba5fc;
+
+    --header-bg: #0f172a;
+    --header-text: #f1f5f9;
+    --sidebar-bg: #1e293b;
+    --sidebar-text: #94a3b8;
+    --sidebar-active-bg: #1a2350;
+    --sidebar-active-text: #b9c9fe;
+  }
+
   body {
-    @apply bg-gov-grey-50 text-gov-grey-900 antialiased;
+    @apply bg-gov-grey-50 text-gov-grey-900 antialiased font-sans;
     font-feature-settings: 'cv11', 'ss01';
+    letter-spacing: -0.011em;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-tight;
+    @apply font-heading tracking-tight;
+    font-weight: 400;
+  }
+
+  h1 {
+    @apply text-3xl leading-tight;
+    letter-spacing: -0.025em;
+  }
+
+  h2 {
+    @apply text-2xl leading-snug;
+    letter-spacing: -0.02em;
+  }
+
+  h3 {
+    @apply text-xl leading-snug;
+    letter-spacing: -0.015em;
+  }
+
+  h4 {
+    @apply text-lg leading-normal;
+  }
+}
+
+@layer utilities {
+  /* Page entrance animation */
+  .animate-page-enter {
+    animation: page-enter 0.35s ease-out both;
+  }
+
+  @keyframes page-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Subtle scale on hover for interactive cards */
+  .hover-lift {
+    transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Smooth status badge pulse for critical items */
+  .pulse-subtle {
+    animation: pulse-subtle 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-subtle {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Skeleton loading shimmer */
+  .shimmer {
+    background: linear-gradient(90deg, var(--color-neutral-100) 25%, var(--color-neutral-200) 50%, var(--color-neutral-100) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Reduced motion: disable all animations */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-page-enter,
+    .hover-lift,
+    .pulse-subtle,
+    .shimmer {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
   }
 }
 

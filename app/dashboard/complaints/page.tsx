@@ -9,14 +9,14 @@ import { COMPLAINT_CATEGORIES, INDUSTRY_CLASSIFICATIONS, RISK_LEVEL_CONFIG } fro
 interface ComplaintListItem {
   id: string;
   referenceNumber: string;
-  summary?: string;
-  business?: string;
-  category?: string;
-  riskLevel?: string;
-  priorityScore?: number;
+  summary: string;
+  business: string;
+  category: string;
+  riskLevel: string;
+  priorityScore: number;
   status: string;
-  submittedAt?: string;
-  slaDeadline?: string;
+  submittedAt: string;
+  slaDeadline: string;
 }
 
 export default function ComplaintsListPage() {

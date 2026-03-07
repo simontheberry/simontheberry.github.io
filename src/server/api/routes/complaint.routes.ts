@@ -147,14 +147,14 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
     const data = complaints.map(c => ({
       id: c.id,
       referenceNumber: c.referenceNumber,
-      summary: c.summary,
+      summary: c.summary || c.rawText.substring(0, 100) + '...',
       business: c.business?.name || 'Unknown',
-      category: c.category,
-      riskLevel: c.riskLevel,
-      priorityScore: c.priorityScore,
+      category: c.category || 'other',
+      riskLevel: c.riskLevel || 'low',
+      priorityScore: c.priorityScore || 0,
       status: c.status,
-      submittedAt: c.submittedAt?.toISOString(),
-      slaDeadline: c.slaDeadline?.toISOString(),
+      submittedAt: c.submittedAt?.toISOString() || new Date().toISOString(),
+      slaDeadline: c.slaDeadline?.toISOString() || new Date().toISOString(),
       assignedTo: c.assignedTo,
     }));
 
