@@ -682,18 +682,81 @@ complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
 // GET /api/v1/complaints/:id/similar – Find similar complaints via vector search
 complaintRoutes.get('/:id/similar', async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const tenantId = req.tenantId!;
 
-  // In production: pgvector cosine similarity query
-  // SELECT c.id, 1 - (ce1.embedding <=> ce2.embedding) as similarity
-  // FROM complaint_embeddings ce1 JOIN complaint_embeddings ce2 ...
-  // WHERE similarity > 0.85
+  try {
+    // Verify complaint exists and belongs to tenant
+    const complaint = await prisma.complaint.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
 
-  res.json({
-    success: true,
-    data: [
-      { id: 'cmp-010', referenceNumber: 'CMP-8G1K-VY27', summary: 'Personal loan advertised at 4.9% but actual rate 7.2% with fees', similarity: 0.94, riskLevel: 'high', business: 'QuickLoan Direct' },
-      { id: 'cmp-011', referenceNumber: 'CMP-9H2L-WZ38', summary: 'Car loan comparison rate excluded establishment fee', similarity: 0.89, riskLevel: 'high', business: 'National Finance Group Pty Ltd' },
-      { id: 'cmp-012', referenceNumber: 'CMP-AJ3M-XA49', summary: 'Mortgage comparison rate did not include LMI premium', similarity: 0.86, riskLevel: 'medium', business: 'Aussie Personal Finance' },
-    ],
-  });
+    if (!complaint) {
+      throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+    }
+
+    // Check if embedding exists for this complaint
+    const embeddingCheck = await prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) as count FROM complaint_embeddings WHERE complaint_id = ${id}
+    `;
+    const hasEmbedding = Number(embeddingCheck[0]?.count || 0) > 0;
+
+    if (!hasEmbedding) {
+      return res.json({
+        success: true,
+        data: [],
+        meta: { message: 'No embedding generated for this complaint yet' },
+      });
+    }
+
+    const threshold = req.query.threshold ? parseFloat(req.query.threshold as string) : 0.85;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 20;
+
+    const results = await prisma.$queryRaw<Array<{
+      complaintId: string;
+      referenceNumber: string;
+      summary: string;
+      similarity: number;
+      riskLevel: string;
+      business: string | null;
+      systemicClusterId: string | null;
+    }>>`
+      SELECT
+        ce.complaint_id AS "complaintId",
+        c.reference_number AS "referenceNumber",
+        COALESCE(c.summary, LEFT(c.raw_text, 120) || '...') AS summary,
+        1 - (ce.embedding <=> target.embedding) AS similarity,
+        COALESCE(c.risk_level, 'low') AS "riskLevel",
+        b.name AS business,
+        c.systemic_cluster_id AS "systemicClusterId"
+      FROM complaint_embeddings ce
+      JOIN complaint_embeddings target ON target.complaint_id = ${id}
+      JOIN complaints c ON c.id = ce.complaint_id
+      LEFT JOIN businesses b ON b.id = c.business_id
+      WHERE ce.tenant_id = ${tenantId}
+        AND c.tenant_id = ${tenantId}
+        AND ce.complaint_id != ${id}
+        AND c.created_at > NOW() - INTERVAL '90 days'
+        AND 1 - (ce.embedding <=> target.embedding) > ${threshold}
+      ORDER BY similarity DESC
+      LIMIT ${limit}
+    `;
+
+    res.json({
+      success: true,
+      data: results.map(r => ({
+        id: r.complaintId,
+        referenceNumber: r.referenceNumber,
+        summary: r.summary,
+        similarity: parseFloat(String(r.similarity)),
+        riskLevel: r.riskLevel,
+        business: r.business || 'Unknown',
+        systemicClusterId: r.systemicClusterId,
+      })),
+    });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    logger.error('Similarity search failed', { complaintId: id, error: error instanceof Error ? error.message : 'Unknown error' });
+    throw new AppError(500, 'SEARCH_ERROR', 'Failed to find similar complaints');
+  }
 });

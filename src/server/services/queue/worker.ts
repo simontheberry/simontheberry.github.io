@@ -4,6 +4,9 @@
 // ============================================================================
 
 import { createLogger } from '../../utils/logger';
+import { SystemicDetectionEngine } from '../triage/systemic-detection';
+import { prisma } from '../../db/client';
+import type { PrismaClient as DetectionPrisma } from '../triage/systemic-detection';
 
 const logger = createLogger('queue-worker');
 
@@ -95,11 +98,16 @@ async function processTriageJob(data: TriageJobData): Promise<void> {
 async function processSystemicDetection(data: SystemicJobData): Promise<void> {
   logger.info(`Processing systemic detection for complaint ${data.complaintId}`);
 
-  // TODO: Instantiate SystemicDetectionEngine, process complaint
-  // const engine = new SystemicDetectionEngine();
-  // const result = await engine.processNewComplaint(data.complaintId, data.rawText, data.tenantId);
+  const engine = new SystemicDetectionEngine(prisma as unknown as DetectionPrisma);
+  const result = await engine.processNewComplaint(data.complaintId, data.rawText, data.tenantId);
 
-  logger.info(`Systemic detection complete for complaint ${data.complaintId}`);
+  logger.info(`Systemic detection complete for complaint ${data.complaintId}`, {
+    embeddingStored: result.embeddingStored,
+    similarCount: result.similarComplaints.length,
+    clusterAction: result.clusterAction,
+    clusterId: result.clusterId,
+    isSpike: result.isSpike,
+  });
 }
 
 /**
