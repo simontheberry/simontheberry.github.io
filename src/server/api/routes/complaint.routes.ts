@@ -77,114 +77,217 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
   const filters = complaintFiltersSchema.parse(normalizedQuery);
   const tenantId = req.tenantId!;
 
-  // In production: prisma.complaint.findMany with dynamic where, orderBy, skip, take
-  // Filter by tenantId, status, riskLevel, category, search (rawText ILIKE), dateRange
-  // Include business name, assigned officer name
-
   logger.info('Complaints list requested', { tenantId, filters });
 
-  const allComplaints = [
-    { id: 'cmp-001', referenceNumber: 'CMP-2A4F-XK91', summary: 'Misleading pricing on home loan comparison rate.', business: 'National Finance Group Pty Ltd', category: 'misleading_conduct', riskLevel: 'critical' as const, priorityScore: 0.92, status: 'triaged', submittedAt: '2025-01-15T09:30:00Z', slaDeadline: '2025-01-22T09:30:00Z' },
-    { id: 'cmp-002', referenceNumber: 'CMP-3B5G-LM72', summary: 'Aged care facility failing to provide adequate nutrition standards.', business: 'Sunrise Aged Care Holdings', category: 'service_quality', riskLevel: 'high' as const, priorityScore: 0.84, status: 'assigned', submittedAt: '2025-01-14T14:15:00Z', slaDeadline: '2025-01-21T14:15:00Z' },
-    { id: 'cmp-003', referenceNumber: 'CMP-4C6H-NP83', summary: 'Telco refusing cooling-off period cancellation.', business: 'QuickConnect Telecom', category: 'unfair_contract_terms', riskLevel: 'medium' as const, priorityScore: 0.61, status: 'in_progress', submittedAt: '2025-01-13T11:00:00Z', slaDeadline: '2025-01-20T11:00:00Z' },
-    { id: 'cmp-004', referenceNumber: 'CMP-5D7I-QR94', summary: 'Building contractor abandoned renovation mid-project.', business: 'Premier Builds Australia', category: 'scam_fraud', riskLevel: 'high' as const, priorityScore: 0.78, status: 'triaged', submittedAt: '2025-01-12T16:45:00Z', slaDeadline: '2025-01-19T16:45:00Z' },
-    { id: 'cmp-005', referenceNumber: 'CMP-6E8J-ST05', summary: 'Insurance claim denial citing fine print exclusion.', business: 'SafeGuard Insurance Ltd', category: 'unfair_contract_terms', riskLevel: 'medium' as const, priorityScore: 0.55, status: 'awaiting_response', submittedAt: '2025-01-11T10:20:00Z', slaDeadline: '2025-01-18T10:20:00Z' },
-    { id: 'cmp-006', referenceNumber: 'CMP-7F9K-UV16', summary: 'Energy provider overcharging during peak tariff incorrectly.', business: 'PowerSave Energy', category: 'billing_dispute', riskLevel: 'low' as const, priorityScore: 0.32, status: 'in_progress', submittedAt: '2025-01-10T08:00:00Z', slaDeadline: '2025-01-17T08:00:00Z' },
-  ];
+  try {
+    // Build dynamic where clause for filtering
+    const where: Parameters<typeof prisma.complaint.findMany>[0]['where'] = {
+      tenantId,
+    };
 
-  // Apply filters
-  let filtered = allComplaints;
-  if (filters.riskLevel) filtered = filtered.filter(c => c.riskLevel === filters.riskLevel);
-  if (filters.category) filtered = filtered.filter(c => c.category === filters.category);
-  if (filters.status) filtered = filtered.filter(c => c.status === filters.status);
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    filtered = filtered.filter(c =>
-      c.summary.toLowerCase().includes(q) ||
-      c.referenceNumber.toLowerCase().includes(q) ||
-      c.business.toLowerCase().includes(q)
-    );
+    if (filters.status) where.status = filters.status;
+    if (filters.riskLevel) where.riskLevel = filters.riskLevel;
+    if (filters.category) where.category = filters.category;
+    if (filters.industry) where.industry = filters.industry;
+    if (filters.assignedTo) where.assignedToId = filters.assignedTo;
+    if (filters.routingDestination) where.routingDestination = filters.routingDestination;
+
+    // Date range filtering
+    if (filters.dateFrom || filters.dateTo) {
+      where.submittedAt = {};
+      if (filters.dateFrom) where.submittedAt = { ...where.submittedAt, gte: new Date(filters.dateFrom) };
+      if (filters.dateTo) where.submittedAt = { ...where.submittedAt, lte: new Date(filters.dateTo) };
+    }
+
+    // Search filtering (rawText, referenceNumber, or business name)
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      where.OR = [
+        { referenceNumber: { contains: q, mode: 'insensitive' } },
+        { rawText: { contains: q, mode: 'insensitive' } },
+        { business: { name: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    // Minimum priority score filtering
+    if (filters.minPriorityScore !== undefined) {
+      where.priorityScore = { gte: filters.minPriorityScore };
+    }
+
+    // Get total count for pagination
+    const totalCount = await prisma.complaint.count({ where });
+
+    // Build orderBy
+    const orderBy: Parameters<typeof prisma.complaint.findMany>[0]['orderBy'] = {};
+    if (filters.sortBy === 'priorityScore') {
+      orderBy.priorityScore = filters.sortOrder;
+    } else if (filters.sortBy === 'submittedAt') {
+      orderBy.submittedAt = filters.sortOrder;
+    } else {
+      orderBy.priorityScore = 'desc'; // Default sort
+    }
+
+    // Fetch complaints with related data
+    const complaints = await prisma.complaint.findMany({
+      where,
+      include: {
+        business: {
+          select: { id: true, name: true, abn: true, industry: true, isVerified: true },
+        },
+        assignedTo: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+      orderBy,
+      skip: (filters.page - 1) * filters.pageSize,
+      take: filters.pageSize,
+    });
+
+    // Transform for response
+    const data = complaints.map(c => ({
+      id: c.id,
+      referenceNumber: c.referenceNumber,
+      summary: c.summary,
+      business: c.business?.name || 'Unknown',
+      category: c.category,
+      riskLevel: c.riskLevel,
+      priorityScore: c.priorityScore,
+      status: c.status,
+      submittedAt: c.submittedAt?.toISOString(),
+      slaDeadline: c.slaDeadline?.toISOString(),
+      assignedTo: c.assignedTo,
+    }));
+
+    res.json({
+      success: true,
+      data,
+      meta: {
+        page: filters.page,
+        pageSize: filters.pageSize,
+        totalCount,
+        totalPages: Math.ceil(totalCount / filters.pageSize),
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to fetch complaints', { tenantId, error: error instanceof Error ? error.message : 'Unknown error' });
+    throw new AppError(500, 'DATABASE_ERROR', 'Failed to fetch complaints');
   }
-
-  // Sort
-  if (filters.sortBy === 'priorityScore') {
-    filtered.sort((a, b) => filters.sortOrder === 'desc' ? b.priorityScore - a.priorityScore : a.priorityScore - b.priorityScore);
-  }
-
-  // Paginate
-  const start = (filters.page - 1) * filters.pageSize;
-  const paged = filtered.slice(start, start + filters.pageSize);
-
-  res.json({
-    success: true,
-    data: paged,
-    meta: {
-      page: filters.page,
-      pageSize: filters.pageSize,
-      totalCount: filtered.length,
-      totalPages: Math.ceil(filtered.length / filters.pageSize),
-    },
-  });
 });
 
 // GET /api/v1/complaints/:id – Get complaint detail
 complaintRoutes.get('/:id', async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const tenantId = req.tenantId!;
 
-  // In production: prisma.complaint.findUnique({ where: { id, tenantId }, include: { business, assignedTo, events, evidence } })
+  try {
+    const complaint = await prisma.complaint.findFirst({
+      where: { id, tenantId },
+      include: {
+        business: {
+          select: {
+            id: true,
+            name: true,
+            abn: true,
+            industry: true,
+            isVerified: true,
+            _count: { select: { complaints: true } },
+          },
+        },
+        assignedTo: {
+          select: { id: true, firstName: true, lastName: true, email: true, role: true },
+        },
+        events: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            eventType: true,
+            description: true,
+            metadata: true,
+            createdAt: true,
+          },
+        },
+        evidence: {
+          select: { id: true, filename: true, mimeType: true, size: true, uploadedAt: true },
+        },
+      },
+    });
 
-  res.json({
-    success: true,
-    data: {
-      id,
-      referenceNumber: 'CMP-2A4F-XK91',
-      status: 'assigned',
-      channel: 'portal',
-      rawText: 'I applied for a personal loan with National Finance Group after seeing their advertisement for a 3.49% comparison rate. After signing the contract, I discovered the actual rate including all fees and charges is 5.2%. The comparison rate advertised did not include the $395 establishment fee, $10/month account keeping fee, or the mandatory insurance premium of $45/month. I am now locked into a 3-year term. When I called to complain, I was told the comparison rate was "indicative only" despite their website and brochures clearly stating it as the comparison rate under the National Consumer Credit Protection Act.',
-      summary: 'Misleading pricing on home loan comparison rate — advertised 3.49% but actual rate with fees is 5.2%. Consumer locked into 3-year term.',
-      complainant: {
-        firstName: 'David',
-        lastName: 'Thompson',
-        email: 'd.thompson@email.com',
-        phone: '0412 345 678',
+    if (!complaint) {
+      throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: complaint.id,
+        referenceNumber: complaint.referenceNumber,
+        status: complaint.status,
+        channel: complaint.channel,
+        rawText: complaint.rawText,
+        summary: complaint.summary,
+        complainant: {
+          firstName: complaint.complainantFirstName,
+          lastName: complaint.complainantLastName,
+          email: complaint.complainantEmail,
+          phone: complaint.complainantPhone,
+          address: complaint.complainantAddress,
+        },
+        business: complaint.business
+          ? {
+              id: complaint.business.id,
+              name: complaint.business.name,
+              abn: complaint.business.abn,
+              industry: complaint.business.industry,
+              isVerified: complaint.business.isVerified,
+              complaintCount: complaint.business._count?.complaints || 0,
+            }
+          : null,
+        category: complaint.category,
+        legalCategory: complaint.legalCategory,
+        industry: complaint.industry,
+        productService: complaint.productService,
+        monetaryValue: complaint.monetaryValue?.toNumber(),
+        monetaryCurrency: complaint.monetaryCurrency,
+        incidentDate: complaint.incidentDate?.toISOString(),
+        routingDestination: complaint.routingDestination,
+        assignedTo: complaint.assignedTo,
+        priorityScore: complaint.priorityScore,
+        riskLevel: complaint.riskLevel,
+        complexityScore: complaint.complexityScore,
+        breachLikelihood: complaint.breachLikelihood,
+        publicHarmIndicator: complaint.publicHarmIndicator,
+        isSystemicRisk: complaint.isSystemicRisk,
+        systemicClusterId: complaint.systemicClusterId,
+        aiConfidence: complaint.aiConfidence,
+        aiReasoning: complaint.aiReasoning,
+        isAiEdited: complaint.isAiEdited,
+        timeline: complaint.events.map(evt => ({
+          id: evt.id,
+          eventType: evt.eventType,
+          description: evt.description,
+          metadata: evt.metadata,
+          createdAt: evt.createdAt?.toISOString(),
+        })),
+        evidence: complaint.evidence.map(e => ({
+          id: e.id,
+          filename: e.filename,
+          mimeType: e.mimeType,
+          size: e.size,
+          uploadedAt: e.uploadedAt?.toISOString(),
+        })),
+        createdAt: complaint.createdAt?.toISOString(),
+        updatedAt: complaint.updatedAt?.toISOString(),
+        submittedAt: complaint.submittedAt?.toISOString(),
+        slaDeadline: complaint.slaDeadline?.toISOString(),
       },
-      business: {
-        id: 'b-001',
-        name: 'National Finance Group Pty Ltd',
-        abn: '12 345 678 901',
-        industry: 'Financial Services',
-        isVerified: true,
-        complaintCount: 18,
-      },
-      category: 'misleading_conduct',
-      legalCategory: 'Australian Consumer Law s18 - Misleading or deceptive conduct',
-      industry: 'financial_services',
-      monetaryValue: 4200,
-      monetaryCurrency: 'AUD',
-      incidentDate: '2025-01-02T00:00:00Z',
-      routingDestination: 'line_2_investigation',
-      assignedTo: { id: 'u-001', firstName: 'Sarah', lastName: 'Chen', role: 'complaint_officer' },
-      priorityScore: 0.92,
-      riskLevel: 'critical',
-      complexityScore: 0.72,
-      isSystemicRisk: true,
-      systemicClusterId: 'sc-001',
-      aiConfidence: 0.89,
-      aiReasoning: 'High risk due to potential systemic misleading conduct affecting multiple consumers. The business has 12 prior complaints in this category.',
-      isAiEdited: false,
-      timeline: [
-        { id: 'evt-001', eventType: 'submitted', description: 'Complaint submitted via public portal', createdAt: '2025-01-15T09:30:00Z' },
-        { id: 'evt-002', eventType: 'triaged', description: 'AI triage completed. Risk: Critical. Priority: 0.92. Routing: Line 2 Investigation.', createdAt: '2025-01-15T09:30:28Z' },
-        { id: 'evt-003', eventType: 'assigned', description: 'Assigned to Sarah Chen (Complaint Officer)', createdAt: '2025-01-15T10:15:00Z' },
-        { id: 'evt-004', eventType: 'systemic_flagged', description: 'Linked to systemic cluster: Misleading comparison rates in personal lending (14 complaints)', createdAt: '2025-01-15T10:16:00Z' },
-      ],
-      evidence: [],
-      createdAt: '2025-01-15T09:30:00Z',
-      updatedAt: '2025-01-15T10:16:00Z',
-      submittedAt: '2025-01-15T09:30:00Z',
-      slaDeadline: '2025-01-17T09:30:00Z',
-    },
-  });
+    });
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    logger.error('Failed to fetch complaint detail', { id, tenantId, error: error instanceof Error ? error.message : 'Unknown error' });
+    throw new AppError(500, 'DATABASE_ERROR', 'Failed to fetch complaint details');
+  }
 });
 
 // PATCH /api/v1/complaints/:id – Update complaint (with state machine validation for status)
@@ -285,19 +388,75 @@ complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
 // POST /api/v1/complaints/:id/assign – Assign complaint to officer
 complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const tenantId = req.tenantId!;
+  const userId = req.userId!;
 
   try {
     const body = assignSchema.parse(req.body);
 
-    logger.info('Complaint assigned', { complaintId: id, assigneeId: body.assigneeId, assignedBy: req.userId });
+    // Verify assignee exists and belongs to tenant
+    const assignee = await prisma.user.findFirst({
+      where: { id: body.assigneeId, tenantId },
+    });
+
+    if (!assignee) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'Assignee not found in this tenant');
+    }
+
+    // Get current complaint to check existing assignment
+    const complaint = await prisma.complaint.findFirst({
+      where: { id, tenantId },
+      select: { assignedToId: true },
+    });
+
+    if (!complaint) {
+      throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+    }
+
+    const assignedAt = new Date();
+
+    // Update assignment
+    const updated = await prisma.complaint.update({
+      where: { id },
+      data: {
+        assignedToId: body.assigneeId,
+      },
+      include: {
+        assignedTo: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    });
+
+    // Create timeline event
+    await prisma.complaintEvent.create({
+      data: {
+        complaintId: id,
+        eventType: 'assigned',
+        description: `Assigned to ${assignee.firstName} ${assignee.lastName}`,
+        metadata: { assignedToId: body.assigneeId, previousAssigneeId: complaint.assignedToId },
+        createdBy: userId,
+      },
+    });
+
+    // Write audit log
+    await writeAuditLog({
+      tenantId,
+      userId,
+      action: 'complaint.assigned',
+      entity: 'Complaint',
+      entityId: id,
+      oldValues: { assignedToId: complaint.assignedToId },
+      newValues: { assignedToId: body.assigneeId },
+    });
+
+    logger.info('Complaint assigned', { complaintId: id, assigneeId: body.assigneeId, assignedBy: userId });
 
     res.json({
       success: true,
       data: {
         complaintId: id,
-        assignedTo: body.assigneeId,
-        assignedBy: req.userId,
-        assignedAt: new Date().toISOString(),
+        assignedTo: updated.assignedTo,
+        assignedBy: userId,
+        assignedAt: assignedAt.toISOString(),
       },
     });
   } catch (error) {
@@ -307,6 +466,15 @@ complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req
         error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: error.errors },
       });
     }
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: { code: error.code, message: error.message },
+      });
+    }
+
+    logger.error('Assignment failed', { complaintId: id, error: error instanceof Error ? error.message : 'Unknown error' });
     return res.status(500).json({ success: false, error: { message: 'Assignment failed' } });
   }
 });
@@ -314,11 +482,66 @@ complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req
 // POST /api/v1/complaints/:id/escalate – Escalate complaint
 complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
   const id = req.params.id as string;
+  const tenantId = req.tenantId!;
+  const userId = req.userId!;
+  const userRole = req.userRole!;
 
   try {
     const body = escalateSchema.parse(req.body);
 
-    logger.info('Complaint escalated', { complaintId: id, destination: body.destination, reason: body.reason, escalatedBy: req.userId });
+    // Get current complaint
+    const complaint = await prisma.complaint.findFirst({
+      where: { id, tenantId },
+      select: { status: true, routingDestination: true },
+    });
+
+    if (!complaint) {
+      throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+    }
+
+    // Only supervisors and admins can escalate
+    const canEscalate = userRole === 'supervisor' || userRole === 'admin';
+    if (!canEscalate) {
+      throw new AppError(403, 'FORBIDDEN', 'Only supervisors and admins can escalate complaints');
+    }
+
+    const escalatedAt = new Date();
+
+    // Update routing destination
+    const updated = await prisma.complaint.update({
+      where: { id },
+      data: {
+        routingDestination: body.destination,
+      },
+    });
+
+    // Create timeline event
+    await prisma.complaintEvent.create({
+      data: {
+        complaintId: id,
+        eventType: 'escalated',
+        description: `Escalated to ${body.destination}: ${body.reason}`,
+        metadata: {
+          destination: body.destination,
+          reason: body.reason,
+          previousDestination: complaint.routingDestination,
+        },
+        createdBy: userId,
+      },
+    });
+
+    // Write audit log
+    await writeAuditLog({
+      tenantId,
+      userId,
+      action: 'complaint.escalated',
+      entity: 'Complaint',
+      entityId: id,
+      oldValues: { routingDestination: complaint.routingDestination },
+      newValues: { routingDestination: body.destination, reason: body.reason },
+    });
+
+    logger.info('Complaint escalated', { complaintId: id, destination: body.destination, reason: body.reason, escalatedBy: userId });
 
     res.json({
       success: true,
@@ -326,8 +549,8 @@ complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
         complaintId: id,
         escalatedTo: body.destination,
         reason: body.reason,
-        escalatedBy: req.userId,
-        escalatedAt: new Date().toISOString(),
+        escalatedBy: userId,
+        escalatedAt: escalatedAt.toISOString(),
       },
     });
   } catch (error) {
@@ -337,6 +560,15 @@ complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
         error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: error.errors },
       });
     }
+
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: { code: error.code, message: error.message },
+      });
+    }
+
+    logger.error('Escalation failed', { complaintId: id, error: error instanceof Error ? error.message : 'Unknown error' });
     return res.status(500).json({ success: false, error: { message: 'Escalation failed' } });
   }
 });
