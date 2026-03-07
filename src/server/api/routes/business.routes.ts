@@ -85,7 +85,7 @@ businessRoutes.get('/search', async (req: Request, res: Response) => {
  */
 businessRoutes.get('/:abn', async (req: Request, res: Response) => {
   try {
-    const { abn } = req.params;
+    const abn = req.params.abn as string;
 
     // Validate ABN format
     if (!isValidAbr(abn)) {

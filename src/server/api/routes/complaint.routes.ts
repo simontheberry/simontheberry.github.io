@@ -129,7 +129,7 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id – Get complaint detail
 complaintRoutes.get('/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   // In production: prisma.complaint.findUnique({ where: { id, tenantId }, include: { business, assignedTo, events, evidence } })
 
@@ -189,7 +189,7 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
 
 // PATCH /api/v1/complaints/:id – Update complaint (with state machine validation for status)
 complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const tenantId = req.tenantId!;
   const userId = req.userId!;
   const userRole = req.userRole!;
@@ -284,7 +284,7 @@ complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
 
 // POST /api/v1/complaints/:id/assign – Assign complaint to officer
 complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   try {
     const body = assignSchema.parse(req.body);
@@ -313,7 +313,7 @@ complaintRoutes.post('/:id/assign', authorize('supervisor', 'admin'), async (req
 
 // POST /api/v1/complaints/:id/escalate – Escalate complaint
 complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   try {
     const body = escalateSchema.parse(req.body);
@@ -343,7 +343,7 @@ complaintRoutes.post('/:id/escalate', async (req: Request, res: Response) => {
 
 // POST /api/v1/complaints/:id/transition – State machine transition
 complaintRoutes.post('/:id/transition', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const tenantId = req.tenantId!;
 
   try {
@@ -401,7 +401,7 @@ complaintRoutes.post('/:id/transition', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id/available-transitions – Get available state transitions
 complaintRoutes.get('/:id/available-transitions', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const tenantId = req.tenantId!;
   const userRole = req.userRole || 'system';
 
@@ -427,7 +427,7 @@ complaintRoutes.get('/:id/available-transitions', async (req: Request, res: Resp
 
 // GET /api/v1/complaints/:id/timeline – Get complaint event timeline
 complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const tenantId = req.tenantId!;
 
   const complaint = await prisma.complaint.findFirst({
@@ -449,7 +449,7 @@ complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id/similar – Find similar complaints via vector search
 complaintRoutes.get('/:id/similar', async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   // In production: pgvector cosine similarity query
   // SELECT c.id, 1 - (ce1.embedding <=> ce2.embedding) as similarity
