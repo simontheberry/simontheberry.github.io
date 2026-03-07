@@ -7,10 +7,32 @@ import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { getAiService } from '../../services/ai/ai-service';
 import { createLogger } from '../../utils/logger';
+import { rateLimit } from '../middleware/rate-limiter';
 
 const logger = createLogger('intake-routes');
 
 export const intakeRoutes = Router();
+
+// Rate limit complaint submissions: 5 per 15 minutes per IP
+const submitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 5,
+  message: 'Too many complaint submissions. Please try again later.',
+});
+
+// Rate limit AI guidance: 20 per 15 minutes per IP
+const guidanceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 20,
+  message: 'Too many AI guidance requests. Please try again later.',
+});
+
+// Rate limit webhook: 100 per 15 minutes per IP
+const webhookLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 100,
+  message: 'Webhook rate limit exceeded.',
+});
 
 // ---- Validation Schemas ----
 
@@ -62,7 +84,7 @@ const webhookIntakeSchema = z.object({
 // ---- Routes ----
 
 // POST /api/v1/intake/submit – Submit a complaint via the public portal
-intakeRoutes.post('/submit', async (req: Request, res: Response) => {
+intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) => {
   try {
     const body = complaintSubmissionSchema.parse(req.body);
 
@@ -120,7 +142,7 @@ intakeRoutes.post('/submit', async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/intake/ai-guidance – Get AI guidance during complaint entry
-intakeRoutes.post('/ai-guidance', async (req: Request, res: Response) => {
+intakeRoutes.post('/ai-guidance', guidanceLimiter, async (req: Request, res: Response) => {
   try {
     const body = aiGuidanceSchema.parse(req.body);
 
@@ -270,7 +292,7 @@ intakeRoutes.post('/ai-guidance', async (req: Request, res: Response) => {
 });
 
 // POST /api/v1/intake/webhook – Receive complaints from external systems
-intakeRoutes.post('/webhook', async (req: Request, res: Response) => {
+intakeRoutes.post('/webhook', webhookLimiter, async (req: Request, res: Response) => {
   try {
     webhookIntakeSchema.parse(req.body);
 

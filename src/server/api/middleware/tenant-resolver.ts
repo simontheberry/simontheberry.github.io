@@ -16,19 +16,14 @@ declare global {
 }
 
 export function tenantResolver(req: Request, _res: Response, next: NextFunction) {
-  // Tenant can be resolved from:
-  // 1. x-tenant-id header (API key auth)
-  // 2. JWT token payload (user auth)
-  // 3. Subdomain (e.g., accc.complaints.gov.au)
+  // Tenant resolution strategy:
+  // - For authenticated routes, tenantId comes from JWT payload (set by authenticate middleware)
+  // - The x-tenant-id header is IGNORED to prevent tenant spoofing attacks
+  // - For public routes, tenant is resolved from the request body (tenantSlug)
+  // - Subdomain-based resolution can be added for multi-tenant deployments
 
-  const tenantId = req.headers['x-tenant-id'] as string;
-
-  if (tenantId) {
-    req.tenantId = tenantId;
-  }
-
-  // Public routes (complaint submission) may not require tenant ID
-  // It will be resolved from the portal URL or submission context
+  // Do NOT set tenantId from headers - this prevents spoofing.
+  // The authenticate middleware will set req.tenantId from the verified JWT.
   next();
 }
 

@@ -138,7 +138,7 @@ evidenceRoutes.post(
 
               aiAnalyses.push({
                 evidenceId: evidence.id,
-                filename: file.originalname,
+                filename: safeName,
                 analysis,
               });
 

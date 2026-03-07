@@ -6,9 +6,12 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticate, authorize } from '../middleware/auth';
 import { requireTenant } from '../middleware/tenant-resolver';
+import { prisma } from '../../db/client';
+import { writeAuditLog } from '../../db/audit';
+import { AppError } from '../middleware/error-handler';
 import { createLogger } from '../../utils/logger';
-import { TransitionManager } from '../services/state-machine/transition-manager';
-import { ComplaintStateMachine, type ComplaintStatus } from '../services/state-machine/complaint-state-machine';
+import { TransitionManager } from '../../services/state-machine/transition-manager';
+import { ComplaintStateMachine, type ComplaintStatus } from '../../services/state-machine/complaint-state-machine';
 
 const logger = createLogger('complaint-routes');
 
@@ -176,28 +179,99 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
   });
 });
 
-// PATCH /api/v1/complaints/:id – Update complaint
+// PATCH /api/v1/complaints/:id – Update complaint (with state machine validation for status)
 complaintRoutes.patch('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const tenantId = req.tenantId!;
+  const userId = req.userId!;
+  const userRole = req.userRole!;
 
-  try {
-    const body = updateComplaintSchema.parse(req.body);
+  const body = updateComplaintSchema.parse(req.body);
 
-    logger.info('Complaint updated', { complaintId: id, updates: Object.keys(body), userId: req.userId });
+  const complaint = await prisma.complaint.findFirst({
+    where: { id, tenantId },
+  });
 
-    res.json({
-      success: true,
-      data: { id, ...body, updatedAt: new Date().toISOString() },
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Validation failed', details: error.errors },
-      });
-    }
-    return res.status(500).json({ success: false, error: { message: 'Update failed' } });
+  if (!complaint) {
+    throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
   }
+
+  // RBAC: only supervisor/admin or the assigned officer can update
+  const isSupervisorOrAdmin = userRole === 'supervisor' || userRole === 'admin';
+  const isAssignedOfficer = complaint.assignedToId === userId;
+
+  if (!isSupervisorOrAdmin && !isAssignedOfficer) {
+    throw new AppError(403, 'FORBIDDEN', 'You do not have permission to update this complaint');
+  }
+
+  // If status is changing, validate through state machine
+  if (body.status && body.status !== complaint.status) {
+    const validation = ComplaintStateMachine.validateTransition(
+      complaint.status as ComplaintStatus,
+      body.status as ComplaintStatus,
+      {
+        userId,
+        userRole,
+        complaintId: id,
+        reason: 'Status update via PATCH',
+      },
+    );
+
+    if (!validation.valid) {
+      throw new AppError(400, 'INVALID_TRANSITION', validation.error || 'Invalid status transition');
+    }
+
+    // Contextual validation: require summary before resolving
+    if (body.status === 'resolved' && !complaint.summary && !body.summary) {
+      throw new AppError(400, 'MISSING_SUMMARY', 'A resolution summary is required before resolving');
+    }
+  }
+
+  const updateData: Record<string, unknown> = {};
+  if (body.status !== undefined) updateData.status = body.status;
+  if (body.category !== undefined) updateData.category = body.category;
+  if (body.riskLevel !== undefined) updateData.riskLevel = body.riskLevel;
+  if (body.summary !== undefined) updateData.summary = body.summary;
+  if (body.routingDestination !== undefined) updateData.routingDestination = body.routingDestination;
+
+  const updated = await prisma.complaint.update({
+    where: { id },
+    data: updateData,
+  });
+
+  // Create timeline event for status changes
+  if (body.status && body.status !== complaint.status) {
+    await prisma.complaintEvent.create({
+      data: {
+        complaintId: id,
+        eventType: 'status_change',
+        description: `Status changed from ${complaint.status} to ${body.status}`,
+        metadata: { fromStatus: complaint.status, toStatus: body.status },
+        createdBy: userId,
+      },
+    });
+  }
+
+  await writeAuditLog({
+    tenantId,
+    userId,
+    action: 'complaint.updated',
+    entity: 'Complaint',
+    entityId: id,
+    oldValues: {
+      status: complaint.status,
+      category: complaint.category,
+      riskLevel: complaint.riskLevel,
+    },
+    newValues: body,
+  });
+
+  logger.info('Complaint updated', { complaintId: id, updates: Object.keys(body), userId });
+
+  res.json({
+    success: true,
+    data: updated,
+  });
 });
 
 // POST /api/v1/complaints/:id/assign – Assign complaint to officer
@@ -319,11 +393,23 @@ complaintRoutes.post('/:id/transition', async (req: Request, res: Response) => {
 
 // GET /api/v1/complaints/:id/available-transitions – Get available state transitions
 complaintRoutes.get('/:id/available-transitions', async (req: Request, res: Response) => {
-  // In production: fetch current complaint status and filter available transitions
-  // For now, return all possible transitions (UI can filter based on user role)
+  const { id } = req.params;
+  const tenantId = req.tenantId!;
   const userRole = req.userRole || 'system';
 
-  const transitions = TransitionManager.getAvailableTransitions('submitted', userRole);
+  const complaint = await prisma.complaint.findFirst({
+    where: { id, tenantId },
+    select: { status: true },
+  });
+
+  if (!complaint) {
+    throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+  }
+
+  const transitions = TransitionManager.getAvailableTransitions(
+    complaint.status as ComplaintStatus,
+    userRole,
+  );
 
   res.json({
     success: true,
@@ -334,15 +420,22 @@ complaintRoutes.get('/:id/available-transitions', async (req: Request, res: Resp
 // GET /api/v1/complaints/:id/timeline – Get complaint event timeline
 complaintRoutes.get('/:id/timeline', async (req: Request, res: Response) => {
   const { id } = req.params;
+  const tenantId = req.tenantId!;
+
+  const complaint = await prisma.complaint.findFirst({
+    where: { id, tenantId },
+    select: { id: true },
+  });
+
+  if (!complaint) {
+    throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
+  }
+
+  const history = await TransitionManager.getTransitionHistory(id, tenantId);
 
   res.json({
     success: true,
-    data: [
-      { id: 'evt-001', eventType: 'submitted', description: 'Complaint submitted via public portal', createdAt: '2025-01-15T09:30:00Z', actor: null },
-      { id: 'evt-002', eventType: 'triaged', description: 'AI triage completed. Risk: Critical (0.92). Routing: Line 2 Investigation.', createdAt: '2025-01-15T09:30:28Z', actor: 'system' },
-      { id: 'evt-003', eventType: 'assigned', description: 'Assigned to Sarah Chen', createdAt: '2025-01-15T10:15:00Z', actor: 'Jane Morrison (Supervisor)' },
-      { id: 'evt-004', eventType: 'systemic_flagged', description: 'Linked to cluster: Misleading comparison rates in personal lending', createdAt: '2025-01-15T10:16:00Z', actor: 'system' },
-    ],
+    data: history,
   });
 });
 

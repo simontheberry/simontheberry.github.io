@@ -10,6 +10,7 @@ import { apiRouter } from './api/routes';
 import { errorHandler } from './api/middleware/error-handler';
 import { requestLogger } from './api/middleware/request-logger';
 import { tenantResolver } from './api/middleware/tenant-resolver';
+import { securityHeaders } from './api/middleware/security-headers';
 import { createLogger } from './utils/logger';
 
 const logger = createLogger('server');
@@ -18,6 +19,7 @@ const app = express();
 
 // Security middleware
 app.use(helmet());
+app.use(securityHeaders);
 app.use(cors({
   origin: config.CLIENT_URL,
   credentials: true,

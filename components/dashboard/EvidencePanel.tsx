@@ -161,7 +161,7 @@ export function EvidencePanel({ complaintId }: Props) {
   const handleDelete = useCallback(async (evidenceId: string) => {
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/v1/evidence/${evidenceId}`, {
+      const response = await fetch(`/api/v1/evidence/${complaintId}/${evidenceId}`, {
         method: 'DELETE',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
