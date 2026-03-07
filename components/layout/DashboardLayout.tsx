@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from './../../components/providers/AuthProvider';
 import {
   Shield,
   LayoutDashboard,
@@ -78,8 +79,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
-  // Role selector for demo — in production, this comes from JWT/auth context
-  const [userRole, setUserRole] = useState<RoleKey>('admin');
+  // Get user role from auth context
+  const { user } = useAuth();
+  const userRole = (user?.role as RoleKey) || 'complaint_officer';
 
   const visibleItems = NAV_ITEMS.filter((item) => item.roles.includes(userRole));
   const currentRole = ROLE_CONFIG[userRole];
@@ -113,7 +115,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </span>
             </button>
 
-            {/* Role Selector (demo) */}
+            {/* User Menu */}
             <div className="relative">
               <button
                 onClick={() => setRoleMenuOpen(!roleMenuOpen)}
@@ -123,7 +125,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   {currentRole.initials}
                 </div>
                 <div className="hidden sm:block text-left">
-                  <p className="text-sm text-white/90 font-medium leading-tight">{currentRole.name}</p>
+                  <p className="text-sm text-white/90 font-medium leading-tight">{user?.firstName || 'User'}</p>
                   <p className="text-[10px] text-white/50 leading-tight">{currentRole.label}</p>
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-white/50" />
@@ -133,33 +135,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setRoleMenuOpen(false)} />
                   <div className="absolute right-0 top-full mt-1 z-50 w-64 rounded-lg bg-white shadow-xl ring-1 ring-gov-grey-200 py-1">
-                    <div className="px-3 py-2 border-b border-gov-grey-100">
-                      <p className="text-[10px] font-medium text-gov-grey-400 uppercase tracking-wider">Switch Role (Demo)</p>
+                    <div className="px-3 py-3 border-b border-gov-grey-100">
+                      <p className="text-sm font-medium text-gov-grey-900">{user?.firstName} {user?.lastName}</p>
+                      <p className="text-xs text-gov-grey-500 mt-1">{user?.email}</p>
+                      <p className="text-xs font-medium text-gov-blue-600 mt-1">{currentRole.label}</p>
                     </div>
-                    {(Object.entries(ROLE_CONFIG) as [RoleKey, typeof ROLE_CONFIG[RoleKey]][]).map(([key, cfg]) => (
-                      <button
-                        key={key}
-                        onClick={() => { setUserRole(key); setRoleMenuOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gov-grey-50 transition-colors ${
-                          userRole === key ? 'bg-gov-blue-50' : ''
-                        }`}
-                      >
-                        <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium text-white ${
-                          userRole === key ? 'bg-gov-blue-600' : 'bg-gov-grey-400'
-                        }`}>
-                          {cfg.initials}
-                        </div>
-                        <div>
-                          <p className={`text-sm font-medium ${userRole === key ? 'text-gov-blue-700' : 'text-gov-grey-700'}`}>
-                            {cfg.name}
-                          </p>
-                          <p className="text-xs text-gov-grey-500">{cfg.label}</p>
-                        </div>
-                      </button>
-                    ))}
                     <div className="border-t border-gov-grey-100 mt-1 pt-1">
                       <Link
-                        href="/"
+                        href="/api/auth/logout"
                         className="flex items-center gap-3 px-3 py-2 text-sm text-gov-grey-600 hover:bg-gov-grey-50 transition-colors"
                       >
                         <LogOut className="h-4 w-4" />
