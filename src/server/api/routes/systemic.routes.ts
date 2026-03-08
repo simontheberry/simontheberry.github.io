@@ -93,11 +93,11 @@ systemicRoutes.post(
   authorize('supervisor', 'executive', 'admin'),
   async (req: Request, res: Response) => {
     const tenantId = req.tenantId!;
-    const { id } = req.params;
+    const id = req.params.id as string;
     const userId = req.userId!;
 
     const cluster = await prisma.systemicCluster.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId } as any,
     });
 
     if (!cluster) {
@@ -106,7 +106,7 @@ systemicRoutes.post(
     }
 
     await prisma.systemicCluster.update({
-      where: { id },
+      where: { id } as any,
       data: {
         isAcknowledged: true,
         acknowledgedBy: userId,

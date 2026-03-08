@@ -166,7 +166,7 @@ intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) 
         complainantLastName: body.complainant.lastName,
         complainantEmail: body.complainant.email,
         complainantPhone: body.complainant.phone,
-        complainantAddress: body.complainant.address ? JSON.stringify(body.complainant.address) : null,
+        complainantAddress: body.complainant.address ? (body.complainant.address as any) : undefined,
       },
     });
 
