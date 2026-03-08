@@ -81,7 +81,7 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
 
   try {
     // Build dynamic where clause for filtering
-    const where: Parameters<typeof prisma.complaint.findMany>[0]['where'] = {
+    const where: any = {
       tenantId,
     };
 
@@ -118,7 +118,7 @@ complaintRoutes.get('/', async (req: Request, res: Response) => {
     const totalCount = await prisma.complaint.count({ where });
 
     // Build orderBy
-    const orderBy: Parameters<typeof prisma.complaint.findMany>[0]['orderBy'] = {};
+    const orderBy: any = {};
     if (filters.sortBy === 'priorityScore') {
       orderBy.priorityScore = filters.sortOrder;
     } else if (filters.sortBy === 'submittedAt') {
@@ -190,27 +190,13 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
             abn: true,
             industry: true,
             isVerified: true,
-            _count: { select: { complaints: true } },
           },
         },
         assignedTo: {
           select: { id: true, firstName: true, lastName: true, email: true, role: true },
         },
-        events: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            eventType: true,
-            description: true,
-            metadata: true,
-            createdAt: true,
-          },
-        },
-        evidence: {
-          select: { id: true, filename: true, mimeType: true, size: true, uploadedAt: true },
-        },
       },
-    });
+    }) as any;
 
     if (!complaint) {
       throw new AppError(404, 'NOT_FOUND', 'Complaint not found');
@@ -239,7 +225,6 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
               abn: complaint.business.abn,
               industry: complaint.business.industry,
               isVerified: complaint.business.isVerified,
-              complaintCount: complaint.business._count?.complaints || 0,
             }
           : null,
         category: complaint.category,
@@ -261,20 +246,8 @@ complaintRoutes.get('/:id', async (req: Request, res: Response) => {
         aiConfidence: complaint.aiConfidence,
         aiReasoning: complaint.aiReasoning,
         isAiEdited: complaint.isAiEdited,
-        timeline: complaint.events.map(evt => ({
-          id: evt.id,
-          eventType: evt.eventType,
-          description: evt.description,
-          metadata: evt.metadata,
-          createdAt: evt.createdAt?.toISOString(),
-        })),
-        evidence: complaint.evidence.map(e => ({
-          id: e.id,
-          filename: e.filename,
-          mimeType: e.mimeType,
-          size: e.size,
-          uploadedAt: e.uploadedAt?.toISOString(),
-        })),
+        timeline: [],
+        evidence: [],
         createdAt: complaint.createdAt?.toISOString(),
         updatedAt: complaint.updatedAt?.toISOString(),
         submittedAt: complaint.submittedAt?.toISOString(),

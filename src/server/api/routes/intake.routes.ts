@@ -112,7 +112,7 @@ intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) 
     let business = null;
     if (body.business.abn) {
       business = await prisma.business.findUnique({
-        where: { abn: body.business.abn },
+        where: { tenantId_abn: { tenantId: tenant.id, abn: body.business.abn } },
       });
       if (!business) {
         business = await prisma.business.create({
@@ -166,7 +166,7 @@ intakeRoutes.post('/submit', submitLimiter, async (req: Request, res: Response) 
         complainantLastName: body.complainant.lastName,
         complainantEmail: body.complainant.email,
         complainantPhone: body.complainant.phone,
-        complainantAddress: body.complainant.address || null,
+        complainantAddress: body.complainant.address ? JSON.stringify(body.complainant.address) : null,
       },
     });
 

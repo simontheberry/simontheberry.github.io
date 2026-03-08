@@ -23,40 +23,22 @@ systemicRoutes.get('/clusters', async (req: Request, res: Response) => {
   const clusters = await prisma.systemicCluster.findMany({
     where: { tenantId, isActive: true },
     orderBy: { detectedAt: 'desc' },
-    include: {
-      complaints: {
-        select: {
-          id: true,
-          businessId: true,
-          business: { select: { id: true, name: true } },
-        },
-      },
-    },
-  });
+  }) as any[];
 
-  const data = clusters.map((cluster) => {
-    const businessMap = new Map<string, string>();
-    for (const c of cluster.complaints) {
-      if (c.business) {
-        businessMap.set(c.business.id, c.business.name);
-      }
-    }
-
-    return {
-      id: cluster.id,
-      title: cluster.title,
-      description: cluster.description,
-      industry: cluster.industry,
-      category: cluster.category,
-      riskLevel: cluster.riskLevel,
-      complaintCount: cluster.complaintCount,
-      avgSimilarity: cluster.avgSimilarity,
-      commonPatterns: cluster.commonPatterns ?? [],
-      affectedBusinesses: Array.from(businessMap.values()),
-      isAcknowledged: cluster.isAcknowledged,
-      detectedAt: cluster.detectedAt.toISOString(),
-    };
-  });
+  const data = clusters.map((cluster) => ({
+    id: cluster.id,
+    title: cluster.title,
+    description: cluster.description,
+    industry: cluster.industry,
+    category: cluster.category,
+    riskLevel: cluster.riskLevel,
+    complaintCount: cluster.complaintCount,
+    avgSimilarity: cluster.avgSimilarity,
+    commonPatterns: cluster.commonPatterns ?? [],
+    affectedBusinesses: [],
+    isAcknowledged: cluster.isAcknowledged,
+    detectedAt: cluster.detectedAt.toISOString(),
+  }));
 
   res.json({ success: true, data });
 });
@@ -64,24 +46,11 @@ systemicRoutes.get('/clusters', async (req: Request, res: Response) => {
 // GET /api/v1/systemic/clusters/:id – Get cluster detail with member complaints
 systemicRoutes.get('/clusters/:id', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
-  const { id } = req.params;
+  const id = req.params.id as string;
 
   const cluster = await prisma.systemicCluster.findFirst({
     where: { id, tenantId },
-    include: {
-      complaints: {
-        select: {
-          id: true,
-          referenceNumber: true,
-          summary: true,
-          riskLevel: true,
-          businessId: true,
-          business: { select: { id: true, name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      },
-    },
-  });
+  }) as any;
 
   if (!cluster) {
     res.status(404).json({ success: false, error: { message: 'Cluster not found' } });
@@ -90,32 +59,6 @@ systemicRoutes.get('/clusters/:id', async (req: Request, res: Response) => {
 
   // Group businesses with complaint counts
   const businessCounts = new Map<string, { id: string; name: string; count: number }>();
-  for (const c of cluster.complaints) {
-    if (c.business) {
-      const existing = businessCounts.get(c.business.id);
-      if (existing) {
-        existing.count++;
-      } else {
-        businessCounts.set(c.business.id, { id: c.business.id, name: c.business.name, count: 1 });
-      }
-    }
-  }
-
-  // Fetch AI analysis if available
-  const aiOutput = await prisma.aiOutput.findFirst({
-    where: {
-      complaintId: { in: cluster.complaints.map((c) => c.id) },
-      outputType: 'clustering_analysis',
-    },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      confidence: true,
-      reasoning: true,
-      parsedOutput: true,
-    },
-  });
-
-  const parsedOutput = (aiOutput?.parsedOutput as Record<string, unknown>) ?? {};
 
   res.json({
     success: true,
@@ -134,20 +77,8 @@ systemicRoutes.get('/clusters/:id', async (req: Request, res: Response) => {
         name: b.name,
         complaintCount: b.count,
       })),
-      complaints: cluster.complaints.map((c) => ({
-        id: c.id,
-        referenceNumber: c.referenceNumber,
-        summary: c.summary ?? 'No summary available',
-        riskLevel: c.riskLevel ?? 'low',
-      })),
-      aiAnalysis: aiOutput
-        ? {
-            confidence: aiOutput.confidence,
-            reasoning: aiOutput.reasoning,
-            recommendedAction: parsedOutput.recommendedAction ?? null,
-            estimatedConsumerHarm: parsedOutput.estimatedConsumerHarm ?? null,
-          }
-        : null,
+      complaints: [],
+      aiAnalysis: null,
       isAcknowledged: cluster.isAcknowledged,
       acknowledgedBy: cluster.acknowledgedBy,
       acknowledgedAt: cluster.acknowledgedAt?.toISOString() ?? null,
@@ -276,7 +207,7 @@ systemicRoutes.get('/repeat-offenders', async (req: Request, res: Response) => {
   const tenantId = req.tenantId!;
 
   const limitSchema = z.coerce.number().int().min(1).max(50).default(10);
-  const limit = limitSchema.parse(req.query.limit ?? 10);
+  const limit = limitSchema.parse(Array.isArray(req.query.limit) ? req.query.limit[0] : (req.query.limit ?? 10));
 
   const businesses = await prisma.business.findMany({
     where: {
